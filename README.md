@@ -73,7 +73,7 @@ chown -R 568:568 /mnt/pool1/apps/mediacleanup/data
 
 ### 2. Image fra GitHub
 
-Kildekoden ligger på GitHub. Hver gang det pushes til `main` eller lages en versjonstagg (`v0.2.0`), kjører GitHub Actions testene og publiserer et ferdig image til GitHub Container Registry:
+Kildekoden ligger på [github.com/pederko/smart-media-cleanup](https://github.com/pederko/smart-media-cleanup). Ved hver push til `main` kjører GitHub Actions testene og publiserer et ferdig image til GitHub Container Registry:
 
 | Tagg | Innhold |
 |---|---|
@@ -211,9 +211,7 @@ Gå tilbake ved å sette forrige tagg. Bruker du `:latest` i stedet for en fast 
 
 ### Utgivelser (for utvikling)
 
-```sh
-git tag v0.3.0 && git push origin v0.3.0   # bygger og publiserer 0.3.0, 0.3 og latest
-```
+Versjonen styres av filen `VERSION`. Når en ny verdi pushes til `main`, tester GitHub Actions koden, publiserer imaget som `<versjon>`, `<major.minor>` og `latest`, lager git-taggen `v<versjon>` og en GitHub-release med teksten fra `CHANGELOG.md`. Andre push til `main` publiserer bare `edge`.
 
 ## Backup og gjenoppretting
 
