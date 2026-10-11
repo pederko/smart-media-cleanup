@@ -1,6 +1,6 @@
 import { Requester, Suggestion } from "../api";
 import { ago, bytes, date, fileName, KIND_LABEL, libColor, num } from "../format";
-import { Empty, ErrorNote, HistoryLine, RiskPill, ScoreMeter, useFetch, useOpenTitle, useRefreshTick } from "../components/common";
+import { Empty, ErrorNote, HistoryLine, RiskPill, ScoreMeter, useFetch, useOpenTitle, useRefreshTick, Poster } from "../components/common";
 
 type Lib = { library: string; alloc: number; files: number; kind: string; protected: boolean };
 type Overview = {
@@ -64,9 +64,12 @@ export default function OverviewPage({ go }: { go: (h: string) => void }) {
               {data.top_suggestions.map((s) => (
                 <li key={s.id}>
                   <ScoreMeter score={s.score} />
-                  <div style={{ minWidth: 0 }}>
-                    {s.title_key ? <button className="t" onClick={() => openTitle(s.title_key!)}>{s.label}</button> : <span className="t">{s.label}</span>}
-                    <div className="small muted"><span>{s.action}</span>, <HistoryLine h={s.history} /></div>
+                  <div className="with-poster">
+                    <Poster k={s.title_key} title={s.label} />
+                    <div style={{ minWidth: 0 }}>
+                      {s.title_key ? <button className="t" onClick={() => openTitle(s.title_key!)}>{s.label}</button> : <span className="t">{s.label}</span>}
+                      <div className="small muted"><span>{s.action}</span>, <HistoryLine h={s.history} /></div>
+                    </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div className="num" style={{ fontWeight: 600 }}>{bytes(s.savings)}</div>
@@ -127,7 +130,7 @@ export default function OverviewPage({ go }: { go: (h: string) => void }) {
         </section>
         <section>
           <h2>Største filer</h2>
-          <Top rows={data.largest_files.map((f) => ({ key: f.title_key, name: fileName(f.path), sub: f.title_name ?? f.library, size: f.size }))} onOpen={openTitle} />
+          <Top rows={data.largest_files.map((f) => ({ key: f.title_key, name: fileName(f.path), sub: f.title_name ?? f.library, size: f.size, poster: false }))} onOpen={openTitle} />
         </section>
       </div>
 
@@ -209,14 +212,17 @@ function Bars({ rows, color }: { rows: { label: string; value: number; note: str
   );
 }
 
-function Top({ rows, onOpen }: { rows: { key: string | null; name: string; sub: string; size: number }[]; onOpen: (k: string) => void }) {
+function Top({ rows, onOpen }: { rows: { key: string | null; name: string; sub: string; size: number; poster?: boolean }[]; onOpen: (k: string) => void }) {
   return (
     <ol className="rank">
       {rows.map((r, i) => (
         <li key={i} style={{ gridTemplateColumns: "1fr auto" }}>
-          <div style={{ minWidth: 0 }}>
-            {r.key ? <button className="t" onClick={() => onOpen(r.key!)} style={{ wordBreak: "break-word" }}>{r.name}</button> : <span className="t">{r.name}</span>}
-            <div className="small muted">{r.sub}</div>
+          <div className="with-poster">
+            {r.poster !== false && <Poster k={r.key} title={r.name} />}
+            <div style={{ minWidth: 0 }}>
+              {r.key ? <button className="t" onClick={() => onOpen(r.key!)} style={{ wordBreak: "break-word" }}>{r.name}</button> : <span className="t">{r.name}</span>}
+              <div className="small muted">{r.sub}</div>
+            </div>
           </div>
           <span className="num">{bytes(r.size)}</span>
         </li>

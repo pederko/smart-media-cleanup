@@ -73,6 +73,16 @@ export function HistoryLine({ h }: { h: Suggestion["history"] }) {
   );
 }
 
+/** Plakat fra Plex (via appen). Plassholder med forbokstav hvis bildet mangler. */
+export function Poster({ k, title, size = "s" }: { k: string | null | undefined; title: string; size?: "s" | "m" | "l" }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [k]);
+  if (!k || failed) {
+    return <span className={`poster ${size} ph`} aria-hidden="true">{(title || "?").trim().charAt(0).toUpperCase()}</span>;
+  }
+  return <img className={`poster ${size}`} src={`/api/poster/${encodeURIComponent(k)}`} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />;
+}
+
 export function RequestedBy({ requests }: { requests?: { by: string; at: number | null; watched: boolean }[] }) {
   if (!requests || requests.length === 0) return null;
   const names = [...new Set(requests.map((r) => r.by))];

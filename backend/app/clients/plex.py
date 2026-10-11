@@ -78,17 +78,17 @@ def fetch(cfg: dict, map_path: Callable, protect_labels: list[str],
             for m in _paged(base, h, f"/library/sections/{key}/all", {"type": 1}):
                 rk = str(m["ratingKey"])
                 items.append((rk, "movie", m.get("title"), m.get("year"), None, None, None,
-                              m.get("addedAt"), title, json.dumps(labels.get(rk, []))))
+                              m.get("addedAt"), title, json.dumps(labels.get(rk, [])), m.get("thumb")))
                 parts.extend(_parts(m, map_path))
         elif stype == "show":
             labels = _labelled_keys(base, h, key, 2, wanted)
             for s in _paged(base, h, f"/library/sections/{key}/all", {"type": 2}):
                 rk = str(s["ratingKey"])
                 items.append((rk, "show", s.get("title"), s.get("year"), None, None, None,
-                              s.get("addedAt"), title, json.dumps(labels.get(rk, []))))
+                              s.get("addedAt"), title, json.dumps(labels.get(rk, [])), s.get("thumb")))
             for e in _paged(base, h, f"/library/sections/{key}/all", {"type": 4}):
                 items.append((str(e["ratingKey"]), "episode", e.get("title"), e.get("year"),
                               str(e.get("grandparentRatingKey")), e.get("parentIndex"), e.get("index"),
-                              e.get("addedAt"), title, "[]"))
+                              e.get("addedAt"), title, "[]", None))
                 parts.extend(_parts(e, map_path))
     return items, parts, libs

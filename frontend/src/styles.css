@@ -273,3 +273,16 @@ table.compact a:hover { text-decoration: underline; text-underline-offset: 3px; 
 .banner.update span { flex: 1; }
 .update-link { color: var(--accent); font-weight: 560; text-decoration: none; }
 .update-link:hover { text-decoration: underline; }
+
+/* ---------- plakater ---------- */
+.with-poster { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.poster { flex: none; display: block; object-fit: cover; border-radius: 4px; background: var(--panel-2);
+  box-shadow: 0 0 0 1px var(--rule); }
+.poster.s { width: 32px; height: 48px; }
+.poster.m { width: 40px; height: 60px; }
+.poster.l { width: 120px; height: 180px; border-radius: 6px; }
+.poster.ph { display: grid; place-items: center; color: var(--faint); font-weight: 600; font-size: 14px; }
+.poster.l.ph { font-size: 40px; }
+.drawer-head { display: flex; gap: 20px; align-items: flex-end; margin: 8px 0 20px; }
+.drawer-head h1 { margin-bottom: 6px; }
+@media (max-width: 560px) { .poster.l { width: 84px; height: 126px; } }

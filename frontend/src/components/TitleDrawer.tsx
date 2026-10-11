@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Suggestion } from "../api";
 import { ago, bytes, date, fileName, KIND_LABEL } from "../format";
-import { Breakdown, RiskPill, useFetch } from "./common";
+import { Breakdown, RiskPill, useFetch, Poster } from "./common";
 
 type TitleDetail = {
   key: string; kind: string; name: string; year: number | null; library: string; folder: string;
@@ -36,8 +36,13 @@ export default function TitleDrawer({ id, onClose }: { id: string; onClose: () =
         {error && <div className="notice err">{error}</div>}
         {!data ? <p className="muted">Henter…</p> : (
           <>
-            <h1>{data.name}{data.year ? <span className="muted" style={{ fontWeight: 400 }}> ({data.year})</span> : null}</h1>
-            <p className="path">{data.folder}</p>
+            <div className="drawer-head">
+              <Poster k={data.key} title={data.name} size="l" />
+              <div style={{ minWidth: 0 }}>
+                <h1>{data.name}{data.year ? <span className="muted" style={{ fontWeight: 400 }}> ({data.year})</span> : null}</h1>
+                <p className="path">{data.folder}</p>
+              </div>
+            </div>
             {data.protected ? <div className="notice ok">Beskyttet: {data.protect_reason}. Vises aldri som forslag.</div> : null}
             <div className="figures">
               <div className="figure"><div className="v">{bytes(data.alloc)}</div><div className="l">{data.file_count} filer</div></div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { qs } from "../api";
 import { ago, bytes, date, fileName, num } from "../format";
-import { ErrorNote, RequestedBy, useFetch, useOpenTitle, useRefreshTick } from "../components/common";
+import { ErrorNote, Poster, RequestedBy, useFetch, useOpenTitle, useRefreshTick } from "../components/common";
 
 type Title = { key: string; kind: string; name: string; year: number | null; library: string; alloc: number; file_count: number;
   play_count: number; last_played: number | null; users_count: number; protected: number; protect_reason: string | null;
@@ -51,9 +51,14 @@ export function TitlesPage() {
             {data?.items.map((t) => (
               <tr key={t.key} className="row">
                 <td className="title-cell">
-                  <button className="btn small" style={{ border: 0, background: "none", padding: 0, fontWeight: 560, textAlign: "left" }} onClick={() => openTitle(t.key)}>{t.name}{t.year ? ` (${t.year})` : ""}</button>
-                  <small>{t.kind === "movie" ? "Film" : "Serie"}{t.best_resolution ? `, ${t.best_resolution}` : ""}{t.radarr_id != null ? ", Radarr" : t.sonarr_id != null ? ", Sonarr" : ""}{t.protected ? `, beskyttet` : ""}</small>
-                  {t.requests?.length ? <small><RequestedBy requests={t.requests} /></small> : null}
+                  <div className="with-poster">
+                    <Poster k={t.key} title={t.name} size="m" />
+                    <div style={{ minWidth: 0 }}>
+                      <button className="btn small" style={{ border: 0, background: "none", padding: 0, fontWeight: 560, textAlign: "left" }} onClick={() => openTitle(t.key)}>{t.name}{t.year ? ` (${t.year})` : ""}</button>
+                      <small>{t.kind === "movie" ? "Film" : "Serie"}{t.best_resolution ? `, ${t.best_resolution}` : ""}{t.radarr_id != null ? ", Radarr" : t.sonarr_id != null ? ", Sonarr" : ""}{t.protected ? `, beskyttet` : ""}</small>
+                      {t.requests?.length ? <small><RequestedBy requests={t.requests} /></small> : null}
+                    </div>
+                  </div>
                 </td>
                 <td>{t.library}</td>
                 <td className="r">{t.play_count}{t.users_count ? <span className="faint small"> / {t.users_count} br.</span> : null}</td>

@@ -164,12 +164,15 @@ def p_all(key: str, request: Request, x_plex_token: str = Header(None)):
             media = _media(f"{folder}/{fname}", SIZES[mid], "4k" if res == 2160 else str(res))
             if mid == 3:
                 media += _media(EXTRA_TWIN[0], EXTRA_TWIN[1], "4k")
-            items.append({"ratingKey": rk, "title": title, "year": year, "addedAt": int(added), "Media": media})
+            thumb = None if title == "Keeper" else f"/library/metadata/{rk}/thumb/1700000000"
+            items.append({"ratingKey": rk, "title": title, "year": year, "addedAt": int(added), "Media": media,
+                          "thumb": thumb})
     elif key == "3" and typ == 1:
         items.append({"ratingKey": KIDS[2], "title": "Kids Movie", "year": 2018, "addedAt": int(NOW - 900 * DAY),
                       "Media": _media(KIDS[0], KIDS[1], "1080")})
     elif key == "2" and typ == 2:
-        items = [{"ratingKey": rk, "title": t, "year": y, "addedAt": int(a)} for _, t, y, _, _, a, _, rk in SERIES]
+        items = [{"ratingKey": rk, "title": t, "year": y, "addedAt": int(a), "thumb": f"/library/metadata/{rk}/thumb/1"}
+                 for _, t, y, _, _, a, _, rk in SERIES]
     elif key == "2" and typ == 4:
         show = {s[0]: s for s in SERIES}
         for eid, sid, sn, ep, fn, size in EPISODES:
@@ -197,6 +200,27 @@ def seerr_requests(take: int = 20, skip: int = 0, x_api_key: str = Header(None))
              "media": {"mediaType": typ, "tmdbId": tmdb, "tvdbId": tvdb, "ratingKey": rk}}
             for rid, typ, tmdb, tvdb, name, pu, days, rk in REQUESTS]
     return {"pageInfo": {"pages": 1, "results": len(rows)}, "results": rows[skip:skip + take]}
+
+
+# Minste gyldige JPEG (1x1) + litt fyll så den passerer størrelsessjekken
+JPEG = bytes.fromhex("ffd8ffe000104a46494600010100000100010000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffc0000b080001000101011100ffc4001f0000010501010101010100000000000000000102030405060708090a0bffc400b5100002010303020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8f9faffda0008010100003f00fbd3ffd9") + b"\x00" * 200
+POSTER_HITS = {"plex": 0, "radarr": 0}
+
+
+@app.get("/plex/photo/:/transcode")
+def p_transcode(url: str, width: int, height: int, x_plex_token: str = Header(None)):
+    from fastapi import Response
+    _plex_auth(x_plex_token)
+    POSTER_HITS["plex"] += 1
+    return Response(JPEG, media_type="image/jpeg")
+
+
+@app.get("/radarr/api/v3/mediacover/{mid}/{name}")
+def r_cover(mid: int, name: str, x_api_key: str = Header(None)):
+    from fastapi import Response
+    _check(x_api_key)
+    POSTER_HITS["radarr"] += 1
+    return Response(JPEG, media_type="image/jpeg")
 
 
 @app.get("/tautulli/api/v2")

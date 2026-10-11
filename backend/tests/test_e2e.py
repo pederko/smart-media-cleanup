@@ -279,3 +279,19 @@ def test_requesters_api_and_filter(client):
     assert lst["items"][0]["requested_by"] == "Bjørn B."
     t = client.get("/api/titles", params={"requested_by": "Anna"}).json()
     assert {i["name"] for i in t["items"]} == {"Popular", "Kids Movie"}
+
+
+def test_posters_from_plex_cached_and_radarr_fallback(client):
+    key = _title("Big Movie")["key"]
+    before = ms.POSTER_HITS["plex"]
+    r = client.get(f"/api/poster/{key}")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+    assert "max-age" in r.headers["cache-control"]
+    client.get(f"/api/poster/{key}")
+    assert ms.POSTER_HITS["plex"] == before + 1          # andre gang fra cache
+    # Keeper har ingen plakat i Plex -> hentes fra Radarr
+    r = client.get(f"/api/poster/{_title('Keeper')['key']}")
+    assert r.status_code == 200 and ms.POSTER_HITS["radarr"] >= 1
+    # Serie med plakat på serie-elementet i Plex
+    assert client.get(f"/api/poster/{_title('Old Show')['key']}").status_code == 200
+    assert client.get("/api/poster/finnes:ikke").status_code == 404

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { api, qs, Requester, Savings, Suggestion } from "../api";
 import { bytes, KIND_LABEL, num } from "../format";
-import { ErrorNote, HistoryLine, RequestedBy, RiskPill, ScoreMeter, useFetch, useOpenTitle, useRefreshTick } from "../components/common";
+import { ErrorNote, HistoryLine, RequestedBy, RiskPill, ScoreMeter, useFetch, useOpenTitle, useRefreshTick, Poster } from "../components/common";
 import SuggestionDetail from "../components/SuggestionDetail";
 
 type ListResp = { total: number; items: Suggestion[]; filtered_savings: Savings };
@@ -137,11 +137,16 @@ export default function SuggestionsPage() {
                   <td><input type="checkbox" checked={selSet.has(s.id)} onChange={() => toggle(s.id)} aria-label={`Velg ${s.label}`} /></td>
                   <td style={{ width: 70 }}><ScoreMeter score={s.score} /></td>
                   <td className="title-cell">
-                    <button className="btn small" style={{ border: 0, background: "none", padding: 0, fontWeight: 560, textAlign: "left" }}
-                      onClick={() => setOpen(open === s.id ? null : s.id)} aria-expanded={open === s.id}>
-                      {s.label}{s.year ? ` (${s.year})` : ""}
-                    </button>
-                    <small>{s.library ?? "Nedlastinger"}{s.best_resolution ? `, ${s.best_resolution}` : ""}{s.radarr_id != null ? (s.monitored ? ", overvåket i Radarr" : ", Radarr") : s.sonarr_id != null ? (s.monitored ? ", overvåket i Sonarr" : ", Sonarr") : ""}</small>
+                    <div className="with-poster">
+                      <Poster k={s.title_key} title={s.label} size="m" />
+                      <div style={{ minWidth: 0 }}>
+                        <button className="btn small" style={{ border: 0, background: "none", padding: 0, fontWeight: 560, textAlign: "left" }}
+                          onClick={() => setOpen(open === s.id ? null : s.id)} aria-expanded={open === s.id}>
+                          {s.label}{s.year ? ` (${s.year})` : ""}
+                        </button>
+                        <small>{s.library ?? "Nedlastinger"}{s.best_resolution ? `, ${s.best_resolution}` : ""}{s.radarr_id != null ? (s.monitored ? ", overvåket i Radarr" : ", Radarr") : s.sonarr_id != null ? (s.monitored ? ", overvåket i Sonarr" : ", Sonarr") : ""}</small>
+                      </div>
+                    </div>
                   </td>
                   <td>{s.action}<div><span className="tag">{KIND_LABEL[s.kind] ?? s.kind}</span></div></td>
                   <td className="small"><HistoryLine h={s.history} />{s.requests?.length ? <div><RequestedBy requests={s.requests} /></div> : null}</td>

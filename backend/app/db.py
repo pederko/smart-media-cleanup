@@ -115,6 +115,7 @@ MIGRATIONS = {
     "requests": [("plex_username", "TEXT"), ("rating_key", "TEXT")],
     "plays": [("username", "TEXT")],
     "titles": [("requests", "TEXT")],
+    "plex_items": [("thumb", "TEXT")],
 }
 
 

@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.4.0
+- Plakater for filmer og serier, de samme som i Plex, i forslag, titler, oversikten og tittelvisningen. Radarr/Sonarr brukes som reserve.
+- Bildene hentes av appen (Plex-token forlater aldri serveren) og lagres i `data/posters` i 30 dager.
+
 ## 0.3.0
 - Appen sier fra når en ny versjon er ute: banner øverst og lenke nederst i menyen, med lenke til hva som er nytt. Sjekker GitHub-releases hver 6. time og kan slås av under Innstillinger → Oppdateringer.
 - YAML-filen bruker nå `:latest`, så TrueNAS viser «Update available» og oppdaterer med Update-knappen – uten å endre taggen.
