@@ -1,0 +1,52 @@
+# Smart Media Cleanup – TrueNAS SCALE 25.10 (Goldeye)
+# Apps → Discover Apps → pilen ved «Custom App» → Install via YAML. Lim inn alt under, gi appen navnet «mediacleanup».
+#
+# Forutsetter at /mnt/pool1/apps/mediacleanup/data finnes og eies av 568:568.
+# Imaget hentes fra GitHub Container Registry (bygges automatisk av GitHub Actions).
+# Bytt <github-bruker> med ditt GitHub-brukernavn (små bokstaver).
+#
+# Alle mediemapper monteres skrivebeskyttet (:ro). Appen kan ikke slette eller endre filer.
+
+services:
+  mediacleanup:
+    # Fast versjon: oppdater ved å endre taggen. Alternativ: :latest (siste utgivelse) eller :edge (siste fra main).
+    image: ghcr.io/<github-bruker>/smart-media-cleanup:0.2.0
+    restart: unless-stopped
+    user: "568:568"
+    ports:
+      - "30480:8000"
+    environment:
+      TZ: Europe/Oslo
+      # Valgfritt: sett adresser/nøkler her i stedet for i grensesnittet.
+      # Verdier satt her overstyrer og låser feltene i appen.
+      # SMC_RADARR_URL: "http://192.168.1.10:30025"
+      # SMC_RADARR_API_KEY: ""
+      # SMC_SONARR_URL: "http://192.168.1.10:30027"
+      # SMC_SONARR_API_KEY: ""
+      # SMC_PLEX_URL: "http://192.168.1.10:32400"
+      # SMC_PLEX_TOKEN: ""
+      # SMC_TAUTULLI_URL: "http://192.168.1.10:30047"
+      # SMC_TAUTULLI_API_KEY: ""
+      # SMC_SEERR_URL: "http://192.168.1.10:30357"
+      # SMC_SEERR_API_KEY: ""
+      # Valgfri innlogging (Basic auth) for nettsiden:
+      # SMC_USERNAME: "admin"
+      # SMC_PASSWORD: ""
+    volumes:
+      - /mnt/pool1/apps/mediacleanup/data:/data
+      - /mnt/pool1/FILM:/media/FILM:ro
+      - /mnt/pool1/TV:/media/TV:ro
+      - /mnt/pool1/Barn:/media/Barn:ro
+      - /mnt/pool1/tmp:/media/tmp:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G

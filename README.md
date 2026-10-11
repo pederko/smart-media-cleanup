@@ -1,0 +1,283 @@
+# Smart Media Cleanup
+
+Skrivebeskyttet analyse av mediebiblioteket på TrueNAS SCALE. Appen kobler filene på disk til Radarr, Sonarr, Plex og Tautulli og gir rangerte, forklarte forslag til hva som kan slettes, erstattes eller ryddes – med plassbesparelse beregnet uten dobbelttelling.
+
+**Appen sletter ingenting.** Mediemappene monteres `:ro`, og appen gjør bare lesende API-kall. Selve slettingen gjør du i Radarr, Sonarr eller Plex.
+
+---
+
+## Innhold
+
+1. [Hva appen gjør](#hva-appen-gjør)
+2. [Sikkerhetsmodell](#sikkerhetsmodell)
+3. [Installasjon på TrueNAS SCALE 25.10](#installasjon-på-truenas-scale-2510)
+4. [Første oppsett](#første-oppsett)
+5. [Bruk](#bruk)
+6. [Slik regnes prioriteten](#slik-regnes-prioriteten)
+7. [Konfigurasjon](#konfigurasjon)
+8. [Oppdatering](#oppdatering)
+9. [Backup og gjenoppretting](#backup-og-gjenoppretting)
+10. [Feilsøking](#feilsøking)
+11. [Arkitektur og utvikling](#arkitektur-og-utvikling)
+12. [Kjente begrensninger](#kjente-begrensninger)
+
+---
+
+## Hva appen gjør
+
+- **Oversikt:** kapasitet, bruk per bibliotek, antall filmer/serier/episoder, hvor mye som aldri er sett eller ikke sett på 12/24/36 måneder, største titler og filer, og hvor mye forslagene samlet kan frigjøre.
+- **Forslag:** rangert liste med søk, filtre og sortering. Hver rad viser handling, risiko, seerhistorikk og frigjort plass. Åpnet rad viser poengberegningen linje for linje, konsekvenser for Radarr/Sonarr/Plex og berørte filer.
+- **Utvalg:** huk av forslag og se samlet gevinst. Overlapp (for eksempel en serie og en av sesongene) og hardlinker telles riktig.
+- **Duplikater:** tre kategorier holdes adskilt – identiske kopier, alternative versjoner og hardlenker (som ikke er duplikater).
+- **Titler og største filer:** oppslag og sortering for 4K-remuxer, ISO-filer og store episoder.
+- **Seerr:** hvem som ba om hver tittel, og om de har sett den selv. Filtrer forslag på «Etterspurt av», og se plassbruk per bruker på oversikten.
+
+Forslagstyper:
+
+| Type | Når | Frigjør |
+|---|---|---|
+| Slett tittel | Film/serie over minstestørrelsen | Alle filer i mappen |
+| Slett sesong | Serie som sees, men en sesong har ikke vært sett på lenge | Sesongens filer |
+| Erstatt med mindre | Film over 40 GB eller episode over 8 GB (justerbart) | Anslag: størrelse minus målstørrelse |
+| Behold én versjon | Flere ulike filer for samme film/episode | De andre versjonene |
+| Identisk kopi | Samme størrelse + delvis hash, ulik inode | Kopien(e) som ikke beholdes |
+| Gammel nedlasting | Mappe i `tmp` uten kopi i biblioteket, eldre enn en måned | Mappen |
+
+## Sikkerhetsmodell
+
+| Tiltak | Hvordan |
+|---|---|
+| Ingen skrivetilgang til media | Alle mediemapper monteres `:ro` i YAML |
+| Ingen sletting i koden | Ingen slette-endepunkter; API-klientene gjør bare `GET` |
+| Minst mulig privilegier | Kjører som `568:568` (apps), `cap_drop: ALL`, `no-new-privileges`, skrivebeskyttet rotfilsystem |
+| Bare nødvendige mapper | Kun FILM, TV, Barn og tmp monteres. `app-config`, `ix-applications`, `frigate-recordings` m.fl. er utenfor rekkevidde |
+| Ingen ZFS-tilgang | Ingen `zfs`-kommandoer. Valgfri TrueNAS-integrasjon bruker en API-nøkkel med rollen *Read-Only Admin* |
+| Hemmeligheter | Lagres i `/data/settings.json` (rettigheter 600) eller som miljøvariabler. Maskeres i API og UI |
+| Beskyttelse | Barn-biblioteket, tagger (`keep`, `behold`) i Radarr/Sonarr og etiketter i Plex gir aldri forslag |
+| Logg | Endringer i innstillinger loggføres i databasen (`audit`) |
+
+Sletting via Radarr/Sonarr kan legges til i en senere fase, med kurv, eksplisitt bekreftelse og revisjonslogg. Filsystemet skal fortsatt være skrivebeskyttet for appen.
+
+## Installasjon på TrueNAS SCALE 25.10
+
+TrueNAS 25.10 kjører apper i Docker, og egne apper legges inn med **Apps → Discover Apps → pilen ved «Custom App» → Install via YAML** (Docker Compose med `services:`-nøkkel). Fremgangsmåten under er laget for den mekanismen.
+
+### 1. Lag datasett og mapper
+
+I **Datasets**: lag `pool1/apps` og deretter `pool1/apps/mediacleanup` (preset *Apps* er fint). Så i TrueNAS-shell:
+
+```sh
+mkdir -p /mnt/pool1/apps/mediacleanup/data
+chown -R 568:568 /mnt/pool1/apps/mediacleanup/data
+```
+
+### 2. Image fra GitHub
+
+Kildekoden ligger på GitHub. Hver gang det pushes til `main` eller lages en versjonstagg (`v0.2.0`), kjører GitHub Actions testene og publiserer et ferdig image til GitHub Container Registry:
+
+| Tagg | Innhold |
+|---|---|
+| `0.2.0`, `0.2` | En bestemt utgivelse (anbefalt i YAML) |
+| `latest` | Siste utgivelse |
+| `edge` | Siste commit på `main` (kan være uferdig) |
+
+Er repoet offentlig, kan TrueNAS hente imaget uten innlogging. Er det privat, må du enten gjøre *pakken* offentlig (GitHub → Packages → smart-media-cleanup → Package settings → Change visibility) eller legge inn GHCR-innlogging i TrueNAS med en token som har `read:packages`.
+
+### 3. Bygge selv (valgfritt)
+
+Trenger du ikke GitHub, kan du bygge på TrueNAS og bruke `image: smart-media-cleanup:0.2.0` med `pull_policy: never` i YAML:
+
+```sh
+git clone https://github.com/<github-bruker>/smart-media-cleanup.git /mnt/pool1/apps/mediacleanup/src
+docker build -t smart-media-cleanup:0.2.0 /mnt/pool1/apps/mediacleanup/src
+```
+
+### 4. Installer appen
+
+1. Apps → Discover Apps → pilen ved **Custom App** → **Install via YAML**.
+2. Navn: `mediacleanup`.
+3. Lim inn innholdet i [`deploy/truenas-app.yaml`](deploy/truenas-app.yaml) og bytt `<github-bruker>` med ditt brukernavn (små bokstaver).
+4. Lagre. TrueNAS henter imaget, og appen starter på **http://<truenas-ip>:30480**.
+
+### 5. Legg til i Homarr (valgfritt)
+
+Lag en app-tile i Homarr med adressen `http://<truenas-ip>:30480`. Ingen integrasjon utover lenken trengs.
+
+## Første oppsett
+
+Ved første oppstart kjører appen en full oppdatering automatisk. Uten tjenester konfigurert får du filstørrelser og grove forslag. Med tjenestene får du seerhistorikk, overvåkingsstatus og riktige konsekvenser.
+
+Åpne **Innstillinger** og fyll inn:
+
+| Tjeneste | Adresse (fra containeren) | Nøkkel |
+|---|---|---|
+| Radarr | `http://<truenas-ip>:30025` | Settings → General → API Key |
+| Sonarr | `http://<truenas-ip>:30027` | Settings → General → API Key |
+| Plex | `http://<truenas-ip>:32400` | X-Plex-Token: åpne et element → ⋯ → Get Info → View XML, token står i adressen |
+| Tautulli | `http://<truenas-ip>:30047` | Settings → Web Interface → API key |
+| Seerr (valgfritt) | `http://<truenas-ip>:30357` | Settings → General → API Key |
+| TrueNAS (valgfritt) | `https://<truenas-ip>` | API-nøkkel for en bruker med rollen *Read-Only Admin* |
+
+Bruk TrueNAS-maskinens LAN-IP. `localhost` peker på containeren selv, og appene ligger i hvert sitt Docker-nettverk.
+
+Trykk **Test tilkobling** for hver, **Lagre innstillinger**, og kjør **Full oppdatering** under Jobber.
+
+**Stimapping:** Radarr, Sonarr, Plex og qBittorrent ser mappene som `/FILM`, `/TV`, `/Barn` og `/tmp-download`/`/downloads`. Dette er forhåndsutfylt og oversettes til `/mnt/pool1/...`. Endrer du mounts i de appene, oppdater mappingen.
+
+**Om TrueNAS-integrasjonen:** Lag en egen bruker (Credentials → Users) med rollen *Read-Only Admin*, og lag en API-nøkkel for den brukeren. Appen leser da pool-kapasitet, datasett og om rotdatasettet har snapshots (slettet plass frigjøres ikke før snapshotene utløper). Uten integrasjonen måles kapasitet med `statvfs` på det monterte datasettet, som for `pool1` gir praktisk talt samme tall.
+
+## Bruk
+
+- **Oversikt** gir hele bildet. Skravert område i kapasitetsstolpen er det forslagene over prioritetsterskelen kan frigjøre.
+- **Forslag**: start med filteret *Lav risiko*, sortert etter prioritet. Åpne en rad for å se begrunnelsen. Huk av det du vil gjøre, og bruk **Vis oppsummering** som arbeidsliste. **Eksporter CSV** gir samme liste til regneark.
+- **Gjennomfør i riktig verktøy**:
+  - Film i Radarr: *Delete* → kryss av *Delete files* og *Add exclusion*.
+  - Hel serie i Sonarr: *Delete* → *Delete files*.
+  - Én sesong: avovervåk sesongen i Sonarr først, slett så filene.
+  - Erstatt med mindre: endre kvalitetsprofil i Radarr/Sonarr og søk på nytt.
+  - Identiske kopier i `tmp`: fjern torrenten i qBittorrent (med filer) hvis den fortsatt seeder.
+- Etter slettingen: kjør **Skann endringer** eller vent på neste automatiske skanning.
+
+### Forespørsler fra Seerr
+
+Når Seerr er koblet til, vises «Etterspurt av …» på forslag og titler. Forespørsler kobles via TMDB-/TVDB-id i Radarr/Sonarr, og via Plex ratingKey for titler som ikke ligger der. Om den som ba om tittelen har sett den, avgjøres ved å sammenligne Seerr-brukerens visningsnavn og Plex-brukernavn med Tautulli-historikken. Klikk et navn i «Etterspurt i Seerr» på oversikten for å se forslagene for den brukeren.
+
+### Seerhistorikk
+
+Historikken kommer fra Tautulli og går bare tilbake til da Tautulli ble installert. «Aldri sett» betyr derfor *ingen avspilling siden historikken startet* – datoen vises på oversikten. Avspillinger under 5 % telles ikke. Når en tittel er byttet ut i Plex og har fått ny `ratingKey`, matches avspillingene på navn og år.
+
+## Slik regnes prioriteten
+
+Prioriteten (0–100) er en sum av synlige delpoeng. Ingen skjult modell. Hvert forslag viser hvilke linjer som gjelder.
+
+| Faktor | Poeng |
+|---|---|
+| Plass som faktisk frigjøres | 0 til +35 (logaritmisk: 10 GB ≈ 12, 30 GB ≈ 24, 70 GB+ = 35) |
+| Aldri sett siden historikken startet | +30 (+22 hvis lagt til etter at historikken startet) |
+| Ikke sett på ≥ 36 / ≥ 24 / ≥ 12 mnd | +25 / +18 / +10 |
+| Sett siste 3 mnd | −20 |
+| Høyst 2 avspillinger og ≥ 20 GB | +8 |
+| 10 eller flere avspillinger | −10 |
+| Seere siste 12 mnd | −6 per bruker (maks −30) |
+| Overvåket i Radarr/Sonarr | −8 (ikke overvåket: +5) |
+| Lagt til innen karantenetiden (6 mnd) | −40 |
+| Etterspurt i Seerr siste 12 mnd | −15 |
+| Etterspurt for over 12 mnd siden, og ingen som ba om den har sett den | +8 |
+| Innholdet beholdes i annen versjon | +25 (versjoner/kopier), +10 (erstatning) |
+
+Alle terskler og vekter kan endres under Innstillinger. Forslag under prioritet 20 skjules som standard.
+
+**Risiko:** *Høy* hvis sett siste 12 mnd, sett av minst to brukere nylig, nylig lagt til eller nylig etterspurt. *Middels* hvis overvåket eller sett noen gang. Ellers *lav*. Identiske kopier er alltid lav risiko.
+
+**Gevinst uten dobbelttelling:** hver fil (inode) telles én gang, med det høyeste kravet fra forslagene som er valgt. En hardlenket fil frigjør bare plass når alle stiene til den er med i utvalget. Ellers vises beløpet som «holdes av hardlinker». Størrelser er allokert plass på ZFS (`st_blocks`), ikke bare logisk filstørrelse.
+
+## Konfigurasjon
+
+Innstillinger lagres i `/data/settings.json` og redigeres i appen. Miljøvariabler overstyrer og låser feltene:
+
+| Variabel | Betydning |
+|---|---|
+| `SMC_RADARR_URL`, `SMC_RADARR_API_KEY` | Radarr |
+| `SMC_SONARR_URL`, `SMC_SONARR_API_KEY` | Sonarr |
+| `SMC_PLEX_URL`, `SMC_PLEX_TOKEN` | Plex |
+| `SMC_TAUTULLI_URL`, `SMC_TAUTULLI_API_KEY` | Tautulli |
+| `SMC_SEERR_URL`, `SMC_SEERR_API_KEY` | Seerr/Overseerr |
+| `SMC_TRUENAS_URL`, `SMC_TRUENAS_API_KEY` | TrueNAS (read-only) |
+| `SMC_USERNAME`, `SMC_PASSWORD` | Slår på innlogging (Basic auth) for nettsiden |
+| `SMC_LOG_LEVEL` | `INFO` (standard) eller `DEBUG` |
+| `TZ` | Tidssone, standard `Europe/Oslo` |
+
+**Port:** endre `30480` i `ports:` i YAML.
+**Biblioteker:** legg til et volum `:ro` i YAML og en rad under Innstillinger → Biblioteker med samme containersti.
+
+### Planlagte jobber
+
+| Jobb | Standard |
+|---|---|
+| Synk med tjenestene | hver 6. time |
+| Inkrementell skanning | hver 24. time |
+| Full skanning (stat av alle filer) | hver 7. dag, som del av en oppdatering |
+| Backup av database og innstillinger | daglig, 7 beholdes |
+
+Bare én jobb kjører om gangen. Inkrementell skanning leser bare filinformasjon i mapper der innholdet er endret (mappens mtime), og typisk tar den sekunder. Delvis hash (12 MB per fil) beregnes kun for filer som har nøyaktig samme størrelse som en annen fil.
+
+## Oppdatering
+
+1. Se hva som er nytt i [CHANGELOG.md](CHANGELOG.md) eller under *Releases* på GitHub.
+2. Apps → mediacleanup → **Edit**, endre taggen i `image:` (f.eks. `0.2.0` → `0.3.0`) og lagre. TrueNAS henter det nye imaget og starter appen på nytt.
+3. Databasen oppgraderes automatisk ved oppstart. Innstillinger og backup i `data/` beholdes.
+
+Gå tilbake ved å sette forrige tagg. Bruker du `:latest` i stedet for en fast versjon, hentes ny versjon når appen installeres på nytt eller imaget hentes manuelt (`docker pull ghcr.io/<github-bruker>/smart-media-cleanup:latest` og så omstart). Fast tagg gir mest kontroll over når oppdateringer skjer.
+
+### Utgivelser (for utvikling)
+
+```sh
+git tag v0.3.0 && git push origin v0.3.0   # bygger og publiserer 0.3.0, 0.3 og latest
+```
+
+## Backup og gjenoppretting
+
+Alt som må tas vare på ligger i `/mnt/pool1/apps/mediacleanup/data`:
+
+- `settings.json` – tilkoblinger, terskler, beskyttelse.
+- `smc.sqlite3` – cache og analyse. Kan alltid bygges opp igjen med en full oppdatering.
+- `backups/` – daglige kopier av begge (7 beholdes).
+
+Anbefalt: en egen periodisk snapshot-oppgave på datasettet `pool1/apps/mediacleanup` (Data Protection → Periodic Snapshot Tasks), og/eller ta det med i eksisterende replikering. Appen selv rører aldri snapshots.
+
+**Gjenoppretting:** stopp appen, kopier ønsket `backups/settings-*.json` til `data/settings.json` (og eventuelt `backups/smc-*.sqlite3` til `data/smc.sqlite3`), start appen.
+
+## Feilsøking
+
+| Symptom | Årsak og løsning |
+|---|---|
+| Appen starter ikke, «manifest unknown» / «denied» | Feil tagg eller brukernavn i `image:` (må være små bokstaver), eller pakken er privat. Se steg 2 |
+| «Fant ikke mappene for … i containeren» | Volumet mangler i YAML, eller containerstien under Innstillinger → Biblioteker stemmer ikke |
+| `Permission denied` i loggen | `data`-mappen eies ikke av 568: `chown -R 568:568 /mnt/pool1/apps/mediacleanup/data`. Mediemappene må være lesbare for 568 (de eies av 568 i dag) |
+| «Ingen kontakt med …» | Bruk LAN-IP, ikke `localhost`. Sjekk port i `docker ps` |
+| «Autentisering avvist (401)» | Feil API-nøkkel/token. For Plex: tokenet endres hvis du logger ut av alle enheter |
+| Filmer i Radarr kobles ikke til filene | Stimappingen stemmer ikke. Sammenlign *Root Folders* i Radarr med «Stimapping fra tjenestene» |
+| Mange titler «aldri sett» som du vet er sett | Tautulli-historikken er kortere enn du tror (se dato på oversikten), eller avspillingene ble gjort før Tautulli ble installert |
+| Gevinsten er 0 for en film | Filen er hardlenket fra nedlastingsmappen. Fjern torrenten også, eller velg også kopien i `tmp` |
+| Tall stemmer ikke etter sletting | Kjør **Skann endringer** og **Analyse** under Jobber |
+
+Logger: Apps → mediacleanup → Logs, eller `docker logs ix-mediacleanup-mediacleanup-1`. Feilede jobber viser full feilmelding under Jobber (klikk på raden). API-dokumentasjon: `http://<truenas-ip>:30480/api/docs`.
+
+## Arkitektur og utvikling
+
+```
+backend/app/
+  main.py          FastAPI: API + statisk frontend
+  settings.py      standard ← settings.json ← miljøvariabler, stimapping
+  db.py            SQLite (WAL), skjema, backup
+  jobs.py          én arbeidstråd + planlegger
+  sync.py          henter fra tjenestene, hver feiler uavhengig
+  scanner.py       inkrementell filskanning, delvis hash
+  clients/         radarr/sonarr (arr.py), plex, tautulli, seerr, truenas (JSON-RPC, read-only)
+  analysis/
+    linking.py     filer → titler, seerhistorikk per tittel/sesong, beskyttelse
+    engine.py      duplikater, forslag, poeng, gevinst uten dobbelttelling
+frontend/src/      React + TypeScript (Vite), ingen tunge UI-biblioteker
+deploy/            YAML for TrueNAS
+```
+
+Valg: Python/FastAPI fordi filskanning, API-klienter og analyse er enkelt og lesbart der. SQLite fordi én fil holder for ~100 000 filer og gjør backup triviell. React bygges statisk og serveres av samme prosess, så alt er én container med én port.
+
+Kjøre lokalt:
+
+```sh
+cd backend && pip install -r requirements-dev.txt
+python -m pytest                     # enhetstester + ende-til-ende mot etterlignede tjenester
+SMC_DATA_DIR=./data uvicorn app.main:app --reload
+cd ../frontend && npm install && npm run dev   # http://localhost:5173, proxy til :8000
+```
+
+Testene starter etterligninger av Radarr, Sonarr, Plex og Tautulli, lager glisne filer på disk (filmer, serier, hardlink, identisk kopi, flere versjoner, beskyttet bibliotek og tagg) og kontrollerer forslag, poeng, beskyttelse, hardlink-håndtering og at serie + sesong ikke telles dobbelt.
+
+## Kjente begrensninger
+
+- «Tilgjengelige alternative versjoner» fra indekserne (Radarr/Sonarr *Interactive Search*) hentes ikke automatisk. Det belaster indekserne og bør gjøres manuelt per tittel.
+- Identiske kopier avgjøres med størrelse + delvis hash (start, midt, slutt). Det er i praksis sikkert for videofiler, men er ikke en full hash.
+- Mapper med uendret mtime stat'es ikke ved inkrementell skanning. Filer som endres på stedet uten at mappen endres, fanges av den ukentlige fullskanningen.
+- Plex-etiketter brukes til beskyttelse for filmer og serier, ikke enkeltepisoder.
+- Appen sletter ingenting i denne versjonen (bevisst).

@@ -1,0 +1,147 @@
+"""Bakgrunnsjobber: én arbeidstråd (begrenser last på ZFS), enkel planlegger."""
+from __future__ import annotations
+
+import logging
+import queue
+import threading
+import time
+import traceback
+
+from . import db, scanner, settings, sync
+from .analysis import engine
+
+log = logging.getLogger("smc.jobs")
+
+KINDS = {
+    "sync": "Synkroniser tjenester",
+    "scan": "Inkrementell filskanning",
+    "scan_full": "Full filskanning",
+    "analyze": "Analyse",
+    "refresh": "Full oppdatering",
+}
+
+_q: "queue.Queue[int]" = queue.Queue()
+_started = False
+_lock = threading.Lock()
+
+
+def enqueue(kind: str) -> dict:
+    if kind not in KINDS:
+        raise ValueError(kind)
+    with db.conn() as c:
+        existing = c.execute("SELECT id FROM jobs WHERE kind=? AND status IN ('queued','running')", (kind,)).fetchone()
+        if existing:
+            return {"id": existing[0], "duplicate": True}
+        jid = c.execute("INSERT INTO jobs(kind,status,progress,message,started) VALUES(?,?,?,?,?)",
+                        (kind, "queued", 0, "I kø", None)).lastrowid
+    _q.put(jid)
+    return {"id": jid, "duplicate": False}
+
+
+def _run(jid: int, kind: str):
+    last_write = [0.0]
+    base = [0.0, 1.0]  # for sammensatte jobber
+
+    def progress(frac: float, msg: str):
+        now = time.time()
+        if now - last_write[0] < 0.75 and frac < 1.0:
+            return
+        last_write[0] = now
+        p = base[0] + (base[1] - base[0]) * max(0.0, min(1.0, frac))
+        with db.conn() as c:
+            c.execute("UPDATE jobs SET progress=?, message=? WHERE id=?", (round(p, 3), msg, jid))
+
+    def phase(lo, hi, fn, *a):
+        base[0], base[1] = lo, hi
+        last_write[0] = 0
+        return fn(progress, *a)
+
+    if kind == "sync":
+        return phase(0, 1, sync.run)
+    if kind == "scan":
+        return phase(0, 1, scanner.scan, False)
+    if kind == "scan_full":
+        return phase(0, 1, scanner.scan, True)
+    if kind == "analyze":
+        return phase(0, 1, engine.run)
+    if kind == "refresh":
+        with db.conn() as c:
+            last_full = db.kv_get(c, "last_full_scan", 0) or 0
+        full = time.time() - last_full > settings.get()["scanner"]["full_scan_days"] * 86400
+        r1 = phase(0.0, 0.35, sync.run)
+        r2 = phase(0.35, 0.85, scanner.scan, full)
+        r3 = phase(0.85, 1.0, engine.run)
+        return {"sync": r1, "scan": r2, "analysis": r3}
+
+
+def _worker():
+    while True:
+        jid = _q.get()
+        with db.conn() as c:
+            row = c.execute("SELECT kind FROM jobs WHERE id=?", (jid,)).fetchone()
+            if not row:
+                continue
+            c.execute("UPDATE jobs SET status='running', started=?, message=? WHERE id=?",
+                      (time.time(), "Starter", jid))
+        kind = row[0]
+        try:
+            result = _run(jid, kind)
+            with db.conn() as c:
+                c.execute("UPDATE jobs SET status='done', progress=1, finished=?, message=?, log=? WHERE id=?",
+                          (time.time(), "Ferdig", _short(result), jid))
+        except Exception as e:
+            log.exception("Jobb %s feilet", kind)
+            with db.conn() as c:
+                c.execute("UPDATE jobs SET status='failed', finished=?, error=?, message=? WHERE id=?",
+                          (time.time(), traceback.format_exc()[-4000:], f"Feilet: {e}", jid))
+
+
+def _short(obj) -> str:
+    import json
+    try:
+        return json.dumps(obj, ensure_ascii=False, default=str)[:4000]
+    except Exception:
+        return str(obj)[:4000]
+
+
+def _scheduler():
+    time.sleep(20)
+    while True:
+        try:
+            s = settings.get()
+            with db.conn() as c:
+                last_sync = db.kv_get(c, "last_sync", 0) or 0
+                last_scan = (db.kv_get(c, "last_scan", {}) or {}).get("time", 0)
+            now = time.time()
+            if (now - last_sync > s["sync"]["interval_hours"] * 3600
+                    and now - last_scan > s["scanner"]["interval_hours"] * 3600):
+                enqueue("refresh")
+            elif now - last_sync > s["sync"]["interval_hours"] * 3600:
+                enqueue("sync")
+                enqueue("analyze")
+            elif now - last_scan > s["scanner"]["interval_hours"] * 3600:
+                enqueue("refresh")
+            with db.conn() as c:
+                last_backup = db.kv_get(c, "last_backup", 0) or 0
+            if now - last_backup > 86400:
+                path = db.backup()
+                with db.conn() as c:
+                    db.kv_set(c, "last_backup", now)
+                log.info("Backup skrevet til %s", path)
+        except Exception:
+            log.exception("Planlegger feilet")
+        time.sleep(300)
+
+
+def start(schedule: bool = True):
+    global _started
+    with _lock:
+        if _started:
+            return
+        _started = True
+    with db.conn() as c:
+        c.execute("UPDATE jobs SET status='aborted', message='Avbrutt ved omstart' WHERE status IN ('queued','running')")
+        c.execute("DELETE FROM jobs WHERE id NOT IN (SELECT id FROM jobs ORDER BY id DESC LIMIT 200)")
+    threading.Thread(target=_worker, name="smc-worker", daemon=True).start()
+    if schedule:
+        threading.Thread(target=_scheduler, name="smc-scheduler", daemon=True).start()

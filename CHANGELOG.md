@@ -1,0 +1,12 @@
+# Endringslogg
+
+## 0.2.0
+- Seerr: viser hvem som ba om hver film/serie i forslag, titler og tittelvisning.
+- Filter «Etterspurt av» i forslag og titler, og oversikt per bruker (antall titler, plass, hvor mye de ikke har sett selv).
+- Forespørsler kobles via TMDB/TVDB (Radarr/Sonarr) og Plex ratingKey (titler utenfor Radarr/Sonarr, f.eks. Barn).
+- Ny poenglinje: +8 når de som ba om en tittel for over 12 måneder siden aldri har sett den. −15 hvis etterspurt siste 12 måneder (som før).
+- Avspillinger matches mot både Tautulli-visningsnavn og Plex-brukernavn.
+- Image bygges og publiseres til GitHub Container Registry med GitHub Actions.
+
+## 0.1.0
+- Første skrivebeskyttede versjon: skanning, kobling mot Radarr/Sonarr/Plex/Tautulli, forslag med forklarbar prioritet, duplikater, gevinst uten dobbelttelling.
