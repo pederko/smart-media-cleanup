@@ -1,5 +1,8 @@
 # Endringslogg
 
+## 0.7.2
+- Duplikater der filen Radarr/Sonarr kjenner skal fjernes: slettes nå via Radarr/Sonarr (moviefile/episodefile), som deretter skanner mappen på nytt og tar i bruk filen du beholder. Ingen ny nedlasting. Krever at filen som beholdes ligger i samme film-/seriemappe.
+
 ## 0.7.1
 - Beskyttelse (som Barn-biblioteket og «keep»-tagger) hindrer ikke lenger opprydding i duplikater og ekstra versjoner – én fil blir alltid igjen. Kan slås på igjen under Innstillinger → Beskyttelse. Beskyttelsen mot å slette hele titler gjelder som før.
 

@@ -246,6 +246,44 @@ def r_movie_delete(mid: int, request: Request, x_api_key: str = Header(None)):
     return {}
 
 
+@app.get("/radarr/api/v3/moviefile")
+def r_moviefiles(movieId: int, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    m = next(m for m in MOVIES if m[0] == movieId)
+    return [{"id": 300 + movieId, "movieId": movieId, "path": f"{m[3]}/{m[4]}"}]
+
+
+@app.delete("/radarr/api/v3/moviefile/{fid}")
+def r_moviefile_delete(fid: int, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    WRITES.append(("DELETE", f"/radarr/api/v3/moviefile/{fid}", {}, None))
+    return {}
+
+
+@app.post("/radarr/api/v3/command")
+@app.post("/sonarr/api/v3/command")
+async def arr_command(request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    body = await request.json()
+    WRITES.append(("POST", request.url.path, {}, body))
+    return {"id": 1, **body}
+
+
+@app.get("/sonarr/api/v3/episodefile/{fid:int}")
+def s_episodefile(fid: int, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    e = next(e for e in EPISODES if e[0] == fid)
+    folder = {s[0]: s[3] for s in SERIES}[e[1]]
+    return {"id": fid, "seriesId": e[1], "seasonNumber": e[2], "path": f"{folder}/{e[4]}"}
+
+
+@app.delete("/sonarr/api/v3/episodefile/{fid:int}")
+def s_episodefile_delete(fid: int, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    WRITES.append(("DELETE", f"/sonarr/api/v3/episodefile/{fid}", {}, None))
+    return {}
+
+
 def _series_obj(sid):
     s = next(x for x in SERIES if x[0] == sid)
     return {"id": sid, "title": s[1], "path": PATH_OVERRIDE.get(("series", sid), s[3]),

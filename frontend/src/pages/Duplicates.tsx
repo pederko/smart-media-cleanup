@@ -154,7 +154,7 @@ export default function DuplicatesPage() {
               </table>
               {g.keep_reason && g.kind !== "hardlink" && !keep[g.id] && <p className="small muted" style={{ margin: "8px 0 0" }}>Foreslått beholdt fordi den {g.keep_reason}.</p>}
               {g.files.some((f) => f.managed && f.path !== k) && (
-                <p className="small" style={{ margin: "8px 0 0", color: "var(--risk-middels)" }}>Filen Radarr/Sonarr kjenner er satt til å slettes. Den hoppes over – velg den som «Beholdes», eller slett i Radarr/Sonarr.</p>
+                <p className="small muted" style={{ margin: "8px 0 0" }}>Filen Radarr/Sonarr kjenner slettes via Radarr/Sonarr, som deretter skanner mappen og tar i bruk filen du beholder. Det krever at den ligger i samme mappe.</p>
               )}
             </section>
           );
@@ -179,7 +179,7 @@ export default function DuplicatesPage() {
   );
 }
 
-type PlanFile = { path: string; size: number; alloc: number | null; ok: boolean; reason: string | null; in_downloads: boolean };
+type PlanFile = { path: string; size: number; alloc: number | null; ok: boolean; reason: string | null; in_downloads: boolean; via: string | null };
 type PlanItem = { id: string; label: string; keep: string; executable: boolean; reason: string | null; files: PlanFile[]; warn_downloads?: boolean };
 type Plan = { enabled: boolean; writable: Record<string, boolean>; items: PlanItem[]; files: number; freed: number; held: number; token: string };
 
@@ -224,14 +224,14 @@ function DupeDeleteDialog({ choices, onClose, onDone }: { choices: { id: string;
               <div className="notice">Sletting av duplikatfiler er slått av. Slå den på under <a href="#/innstillinger" onClick={onClose}>Innstillinger → Sletting</a>.</div>
             ) : (
               <>
-                <p className="lede">{okFiles.length > 0 ? <>Filene slettes fra disk. <b>{bytes(plan.freed)}</b> frigjøres. Filen merket «Beholdes» i hver gruppe blir liggende. Dette kan ikke angres.</> : "Ingen av filene kan slettes."}</p>
+                <p className="lede">{okFiles.length > 0 ? <>Filene slettes fra disk{okFiles.some((f) => f.via) ? " – filer Radarr/Sonarr kjenner, slettes via dem, og de skanner mappen på nytt" : ""}. <b>{bytes(plan.freed)}</b> frigjøres. Filen merket «Beholdes» i hver gruppe blir liggende. Dette kan ikke angres.</> : "Ingen av filene kan slettes."}</p>
                 {dl && <div className="notice">Noen filer ligger i nedlastingsmappen. Deles de fortsatt i qBittorrent, vil torrenten melde at filene mangler – fjern den der etterpå.</div>}
                 {okFiles.length > 0 && (
                   <table className="compact"><tbody>
                     {plan.items.filter((i) => i.files.some((f) => f.ok)).map((i) => (
                       <tr key={i.id}>
                         <td>{i.label}<div className="small muted">Beholder {fileName(i.keep)}</div></td>
-                        <td>{i.files.filter((f) => f.ok).map((f) => <div key={f.path} className="small">{fileName(f.path)}</div>)}</td>
+                        <td>{i.files.filter((f) => f.ok).map((f) => <div key={f.path} className="small">{fileName(f.path)}{f.via && <span className="tag" style={{ marginLeft: 6 }}>via {f.via === "radarr" ? "Radarr" : "Sonarr"}</span>}</div>)}</td>
                         <td className="r num">{bytes(i.files.filter((f) => f.ok).reduce((s, f) => s + (f.alloc ?? f.size), 0))}</td>
                       </tr>
                     ))}

@@ -457,13 +457,37 @@ def test_duplicate_delete_disabled(client, no_refresh):
     assert r.status_code == 403
 
 
-def test_duplicate_versions_never_delete_managed_file(client, no_refresh):
+def test_duplicate_managed_file_swapped_via_radarr(client, no_refresh):
+    """Behold den uadministrerte versjonen: Radarr sletter sin fil og skanner mappen på nytt."""
+    import os
     _enable_files(client)
     g = client.get("/api/duplicates", params={"kind": "versions"}).json()["items"][0]
     unmanaged = next(f["path"] for f in g["files"] if not f["managed"])
     p = client.post("/api/duplicates/plan", json={"groups": [{"id": g["id"], "keep": unmanaged}]}).json()
-    it = p["items"][0]
-    assert not it["executable"] and "Radarr/Sonarr" in it["files"][0]["reason"]
+    f = p["items"][0]["files"][0]
+    assert f["ok"] and f["via"] == "radarr" and f["path"].endswith("Twin.2012.1080p.mkv")
+    ms.WRITES.clear()
+    r = client.post("/api/duplicates/execute",
+                    json={"groups": [{"id": g["id"], "keep": unmanaged}], "token": p["token"]}).json()
+    assert r["done"] == 1, r
+    assert ("DELETE", "/radarr/api/v3/moviefile/303", {}, None) in ms.WRITES
+    cmd = [w for w in ms.WRITES if w[0] == "POST"][0]
+    assert cmd[3] == {"name": "RescanMovie", "movieId": 3}
+    assert ms.WRITES.index(("DELETE", "/radarr/api/v3/moviefile/303", {}, None)) < ms.WRITES.index(cmd)
+    # Appen rørte ikke filene på disk selv
+    root = _media_root()
+    assert os.path.exists(f"{root}/FILM/Twin (2012)/Twin.2012.1080p.mkv")
+    h = client.get("/api/actions/history").json()["items"][0]
+    assert h["service"] == "radarr" and h["status"] == "utført"
+
+
+def test_duplicate_managed_refused_when_keep_outside_folder(client, no_refresh):
+    _enable_files(client)
+    g = client.get("/api/duplicates", params={"kind": "identical"}).json()["items"][0]
+    tmp_copy = next(f["path"] for f in g["files"] if f["in_downloads"])
+    p = client.post("/api/duplicates/plan", json={"groups": [{"id": g["id"], "keep": tmp_copy}]}).json()
+    f = p["items"][0]["files"][0]
+    assert not f["ok"] and "utenfor mappen" in f["reason"]
 
 
 def test_duplicate_delete_identical_copy_from_disk(client, no_refresh):

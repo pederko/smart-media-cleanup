@@ -21,6 +21,7 @@ import os
 import time
 
 from . import db, jobs, settings
+from .actions import ActionError, _arr, _req, _same_folder
 from .analysis import engine
 
 KIND_LABEL = {"identical": "Identiske kopier", "versions": "Flere versjoner", "hardlink": "Hardlenker"}
@@ -128,7 +129,33 @@ def protection_applies() -> bool:
     return bool(settings.get()["protection"].get("include_duplicates", False))
 
 
-def _check_file(f: dict, fi: dict | None, managed: set[str], protected: bool) -> str | None:
+VIDEO_EXT = {".mkv", ".mp4", ".m4v", ".avi", ".ts", ".m2ts", ".iso", ".wmv", ".mov", ".mpg", ".mpeg", ".webm"}
+
+
+def _arr_route(c, path: str, keep: str, keep_in_downloads: bool) -> tuple[dict | None, str | None]:
+    """For filer Radarr/Sonarr kjenner: slett via deres API og la dem skanne mappen på nytt,
+    slik at filen som beholdes tas i bruk i stedet. Krever at den beholdte filen ligger i
+    samme film-/seriemappe (ellers ville tittelen bli stående som manglende)."""
+    m = db.rows(c, "SELECT id, path, title FROM radarr_movies WHERE file_path=?", (path,))
+    if m:
+        route = {"service": "radarr", "movie_id": m[0]["id"], "folder": (m[0]["path"] or "").rstrip("/")}
+    else:
+        sf = db.rows(c, "SELECT f.id, f.series_id, s.path FROM sonarr_files f JOIN sonarr_series s ON s.id=f.series_id "
+                        "WHERE f.path=?", (path,))
+        if not sf:
+            return None, "Administreres av Radarr/Sonarr – fant ikke oppføringen"
+        route = {"service": "sonarr", "file_id": sf[0]["id"], "series_id": sf[0]["series_id"],
+                 "folder": (sf[0]["path"] or "").rstrip("/")}
+    name = "Radarr" if route["service"] == "radarr" else "Sonarr"
+    if keep_in_downloads or not route["folder"] or not keep.startswith(route["folder"] + "/"):
+        return None, (f"{name} kjenner denne filen, og filen som beholdes ligger utenfor mappen til {name}. "
+                      f"Velg en fil i samme mappe som «Beholdes», eller slett i {name}.")
+    if os.path.splitext(keep)[1].lower() not in VIDEO_EXT:
+        return None, "Filen som beholdes er ikke en videofil"
+    return route, None
+
+
+def _check_file(f: dict, fi: dict | None, managed: set[str], protected: bool, need_write: bool = True) -> str | None:
     """Returnerer grunn til at filen IKKE kan slettes, eller None."""
     if fi is None:
         return "Finnes ikke lenger i skanningen"
@@ -153,7 +180,7 @@ def _check_file(f: dict, fi: dict | None, managed: set[str], protected: bool) ->
         return "Ikke en vanlig fil"
     if st.st_size != fi["size"] or abs(st.st_mtime - fi["mtime"]) > 1 or st.st_ino != fi["inode"]:
         return "Filen er endret siden skanningen – kjør ny skanning"
-    if not os.access(os.path.dirname(cpath), os.W_OK):
+    if need_write and not os.access(os.path.dirname(cpath), os.W_OK):
         return "Ingen skrivetilgang (mappen er montert :ro)"
     return None
 
@@ -197,14 +224,23 @@ def plan(choices: list[dict]) -> dict:
                 fr = file_rows.get(f["path"], {})
                 if f["path"] == keep or (fr and fr.get("inode") == kr.get("inode") and fr.get("dev") == kr.get("dev")):
                     continue  # samme fil som den som beholdes (hardlink)
-                reason = _check_file(f, file_rows.get(f["path"]), managed, bool(g["protected"]) and protection_applies())
+                prot = bool(g["protected"]) and protection_applies()
+                route = None
+                if f["managed"]:
+                    route, reason = _arr_route(c, f["path"], keep, kf.get("in_downloads", False))
+                    if route:
+                        reason = _check_file(f, file_rows.get(f["path"]), set(), prot, need_write=False)
+                else:
+                    reason = _check_file(f, file_rows.get(f["path"]), managed, prot)
                 to_delete.append({"path": f["path"], "size": f["size"], "alloc": f.get("alloc"),
                                   "ok": reason is None, "reason": reason, "managed": f["managed"],
-                                  "in_downloads": f["in_downloads"]})
+                                  "in_downloads": f["in_downloads"],
+                                  "via": route["service"] if route and reason is None else None,
+                                  "route": route if reason is None else None})
             ok = [f for f in to_delete if f["ok"]]
             for f in ok:
                 claims[f["path"]] = f["alloc"] or f["size"]
-                h.update(f["path"].encode())
+                h.update((f["path"] + "|" + (f["via"] or "fs")).encode())
             h.update((g["id"] + "|" + keep).encode())
             items.append({**base, "executable": bool(ok), "files": to_delete,
                           "reason": None if ok else (to_delete[0]["reason"] if to_delete else "Ingenting å slette"),
@@ -237,24 +273,30 @@ def execute(choices: list[dict], token: str) -> dict:
                     continue
                 # Ny kontroll rett før sletting
                 fi = db.rows(c, "SELECT path, size, alloc, mtime, inode, dev, nlink FROM files WHERE path=?", (f["path"],))
-                reason = _check_file(f, fi[0] if fi else None, managed, False)
+                if f.get("via"):
+                    reason = _check_file(f, fi[0] if fi else None, set(), False, need_write=False)
+                else:
+                    reason = _check_file(f, fi[0] if fi else None, managed, False)
                 keep_c, _ = _container_path(it["keep"])
                 if reason is None and not (keep_c and os.path.isfile(keep_c)):
                     reason = "Filen som skal beholdes finnes ikke lenger"
                 if reason:
                     status, detail = "feilet", reason
                 else:
-                    cpath, _ = _container_path(f["path"])
                     try:
-                        os.remove(cpath)
-                        status, detail = "utført", f"Slettet (beholdt {os.path.basename(it['keep'])})"
+                        if f.get("via"):
+                            detail = _delete_via_arr(f["route"], f["path"], it["keep"])
+                        else:
+                            os.remove(_container_path(f["path"])[0])
+                            detail = f"Slettet (beholdt {os.path.basename(it['keep'])})"
+                        status = "utført"
                         deleted_bytes += f["alloc"] or f["size"] or 0
-                    except OSError as e:
-                        status, detail = "feilet", f"{type(e).__name__}: {e}"
+                    except (OSError, ActionError) as e:
+                        status, detail = "feilet", str(e) if isinstance(e, ActionError) else f"{type(e).__name__}: {e}"
                 c.execute("INSERT INTO actions(ts,suggestion_id,title_key,title,action,service,status,detail,bytes) "
                           "VALUES(?,?,?,?,?,?,?,?,?)",
                           (time.time(), it["id"], None, f"{it['label']}: {os.path.basename(f['path'])}",
-                           "delete_file", "filsystem", status, detail, (f["alloc"] or f["size"]) if status == "utført" else 0))
+                           "delete_file", f.get("via") or "filsystem", status, detail, (f["alloc"] or f["size"]) if status == "utført" else 0))
                 db.audit(c, "delete_file", {"path": f["path"], "keep": it["keep"], "status": status, "detail": detail})
                 results.append({"path": f["path"], "status": status, "detail": detail})
     done = sum(r["status"] == "utført" for r in results)
@@ -262,3 +304,26 @@ def execute(choices: list[dict], token: str) -> dict:
         jobs.enqueue("refresh")
     return {"results": results, "done": done, "failed": sum(r["status"] == "feilet" for r in results),
             "freed_estimate": min(deleted_bytes, p["freed"]) if p["freed"] else deleted_bytes}
+
+
+def _delete_via_arr(route: dict, path: str, keep: str) -> str:
+    """Slett én fil via Radarr/Sonarr og be dem skanne mappen, så den beholdte filen tas i bruk."""
+    if route["service"] == "radarr":
+        base, h = _arr("radarr")
+        movie = _req("GET", f"{base}/api/v3/movie/{route['movie_id']}", h).json()
+        if not _same_folder(movie.get("path"), route["folder"]):
+            raise ActionError("Mappen i Radarr stemmer ikke med analysen – kjør ny oppdatering først")
+        files = _req("GET", f"{base}/api/v3/moviefile", h, params={"movieId": route["movie_id"]}).json()
+        mf = next((x for x in files if settings.map_service_path(x.get("path")) == path), None)
+        if not mf:
+            raise ActionError("Radarr peker ikke lenger på denne filen – kjør ny oppdatering først")
+        _req("DELETE", f"{base}/api/v3/moviefile/{mf['id']}", h)
+        _req("POST", f"{base}/api/v3/command", h, json={"name": "RescanMovie", "movieId": route["movie_id"]})
+        return f"Slettet i Radarr; Radarr skanner mappen og tar i bruk {os.path.basename(keep)}"
+    base, h = _arr("sonarr")
+    ef = _req("GET", f"{base}/api/v3/episodefile/{route['file_id']}", h).json()
+    if settings.map_service_path(ef.get("path")) != path:
+        raise ActionError("Sonarr peker ikke lenger på denne filen – kjør ny oppdatering først")
+    _req("DELETE", f"{base}/api/v3/episodefile/{route['file_id']}", h)
+    _req("POST", f"{base}/api/v3/command", h, json={"name": "RescanSeries", "seriesId": route["series_id"]})
+    return f"Slettet i Sonarr; Sonarr skanner mappen og tar i bruk {os.path.basename(keep)}"
