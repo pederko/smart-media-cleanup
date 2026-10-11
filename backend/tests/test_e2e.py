@@ -1003,4 +1003,21 @@ def test_disallow_splits_mixed_groups():
     done = disallow(p, {"WEBRip-2160p", "Remux-2160p"})
     assert set(done) == {"WEBRip-2160p", "Remux-2160p"}
     assert "WEBDL-2160p" in allowed_qualities(p) and "WEBRip-2160p" not in allowed_qualities(p)
-    assert cutoff_name(p) == "WEB 2160p"
+    assert cutoff_name(p) == "WEBDL-2160p"  # a one-quality group becomes a plain quality
+    ms._validate_profile(p)
+
+
+def test_disallow_leaves_no_single_quality_group():
+    """Sonarr refuses «Groups must contain multiple qualities» (seen with an anime remux profile)."""
+    from app.arrsetup import allowed_qualities, cutoff_name, disallow
+    p = ms._profiles("sonarr")[1]
+    remux = {"quality": {"id": 20, "name": "Bluray-1080p Remux"}, "items": [], "allowed": True}
+    blu = {"quality": {"id": 7, "name": "Bluray-1080p"}, "items": [], "allowed": True}
+    p["items"] = [x for x in p["items"] if x.get("quality", {}).get("name") not in ("Bluray-1080p", "Bluray-1080p Remux")]
+    p["items"].append({"name": "Remux-1080p", "id": 1005, "allowed": True, "items": [remux, blu]})
+    p["cutoff"] = 1005
+    disallow(p, {"Bluray-1080p Remux"})
+    assert all(len(it["items"]) != 1 for it in p["items"])
+    assert "Bluray-1080p" in allowed_qualities(p) and "Bluray-1080p Remux" not in allowed_qualities(p)
+    assert cutoff_name(p) == "Bluray-1080p"
+    ms._validate_profile(p)  # would be accepted by Sonarr

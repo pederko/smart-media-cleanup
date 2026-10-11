@@ -594,6 +594,17 @@ async def arr_defs_put(svc: str, request: Request, x_api_key: str = Header(None)
     return body
 
 
+def _validate_profile(body):
+    """Like Radarr/Sonarr: groups need at least two qualities, and the cutoff must be an allowed item."""
+    from fastapi import HTTPException as _H
+    for it in body["items"]:
+        if it.get("items") and len(it["items"]) < 2:
+            raise _H(400, detail=[{"errorMessage": "Groups must contain multiple qualities"}])
+    ids = {(it["id"] if it.get("items") else it["quality"]["id"]) for it in body["items"] if it.get("allowed")}
+    if body.get("cutoff") not in ids:
+        raise _H(400, detail=[{"errorMessage": "Cutoff must be an allowed quality or group"}])
+
+
 @app.get("/{svc}/api/v3/qualityprofile")
 def arr_profiles(svc: str, x_api_key: str = Header(None)):
     _check(x_api_key)
@@ -604,6 +615,7 @@ def arr_profiles(svc: str, x_api_key: str = Header(None)):
 async def arr_profile_put(svc: str, pid: int, request: Request, x_api_key: str = Header(None)):
     _check(x_api_key)
     body = await request.json()
+    _validate_profile(body)
     WRITES.append(("PUT", f"/{svc}/api/v3/qualityprofile/{pid}", {}, body))
     ARR_STATE[svc]["profiles"][pid] = body
     return body
@@ -613,6 +625,7 @@ async def arr_profile_put(svc: str, pid: int, request: Request, x_api_key: str =
 async def arr_profile_post(svc: str, request: Request, x_api_key: str = Header(None)):
     _check(x_api_key)
     body = await request.json()
+    _validate_profile(body)
     st = ARR_STATE[svc]
     body["id"] = st["next_id"]
     st["next_id"] += 1

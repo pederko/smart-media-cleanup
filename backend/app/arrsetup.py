@@ -234,8 +234,16 @@ def disallow(profile: dict, names: set[str]) -> list[str]:
             for k in hit:
                 items.append({"quality": k["quality"], "items": [], "allowed": False})
                 done.append(_iname(k))
-            it["items"] = [k for k in kids if k not in hit]
-            items.append(it)
+            rest = [k for k in kids if k not in hit]
+            if len(rest) == 1:
+                # Radarr/Sonarr refuse groups with a single quality – it becomes a plain quality
+                single = {"quality": rest[0]["quality"], "items": [], "allowed": True}
+                if profile.get("cutoff") == it.get("id"):
+                    profile["cutoff"] = single["quality"]["id"]
+                items.append(single)
+            else:
+                it["items"] = rest
+                items.append(it)
     profile["items"] = items
     _fix_cutoff(profile)
     return done

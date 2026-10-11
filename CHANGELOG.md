@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.1
+- **Fixed:** stopping remuxes in a profile where a remux shared a group with one other quality (e.g. an anime «Remux-1080p» group with Bluray-1080p) failed with «Groups must contain multiple qualities». The remaining quality is now kept as a plain quality, and the upgrade cutoff follows it.
+
 ## 1.1.0
 **Download rules** – stop the problem at the source, not only clean up afterwards.
 
