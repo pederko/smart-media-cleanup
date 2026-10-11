@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.2.2
+- Rettet: skanning av store biblioteker feilet med «database is locked». Fremdrift skrives nå i minnet i stedet for til databasen mens jobben holder en skrivetransaksjon.
+- Skanneren slipper skrivelåsen minst hvert annet sekund og under pauser, så API og planlegger ikke blokkeres.
+- Ny test med 3000 filer, ekte fremdriftsrapportering og samtidige skrivere.
+
 ## 0.2.1
 - Appikon (også som ikon i nettleserfanen) og skript som setter ikonet i TrueNAS Apps.
 - «Web UI»-knapp i TrueNAS via `x-portals` i YAML-filen.

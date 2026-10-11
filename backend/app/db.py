@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -92,7 +93,7 @@ def db_path():
 
 def connect() -> sqlite3.Connection:
     settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path(), timeout=60, isolation_level=None)
+    conn = sqlite3.connect(db_path(), timeout=float(os.environ.get("SMC_DB_TIMEOUT", "60")), isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")

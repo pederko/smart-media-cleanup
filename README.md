@@ -89,7 +89,7 @@ Kildekoden ligger på [github.com/pederko/smart-media-cleanup](https://github.co
 
 | Tagg | Innhold |
 |---|---|
-| `0.2.1`, `0.2` | En bestemt utgivelse (anbefalt i YAML) |
+| `0.2.2`, `0.2` | En bestemt utgivelse (anbefalt i YAML) |
 | `latest` | Siste utgivelse |
 | `edge` | Siste commit på `main` (kan være uferdig) |
 
@@ -120,7 +120,7 @@ Bruk **Install via YAML**, ikke skjemaet «Install iX App» (det med felter for 
 |---|---|---|
 | Application name | Name | `mediacleanup` |
 | Image Configuration | Repository | `ghcr.io/pederko/smart-media-cleanup` |
-| | Tag | `0.2.1` |
+| | Tag | `0.2.2` |
 | Container Configuration | Timezone | `Europe/Oslo` |
 | Security Context | Privileged | av |
 | | Custom User | på, User ID `568`, Group ID `568` |
@@ -146,7 +146,7 @@ sh /tmp/set-icon.sh mediacleanup
 
 Last Apps-siden på nytt. Ikonet kan bli tilbakestilt når appen redigeres (Edit) – kjør i så fall skriptet igjen. Det påvirker bare visningen i TrueNAS.
 
-**Om versjonsnummeret i TrueNAS:** «App Version: custom» og «Version: 1.0.0» under Application Info gjelder TrueNAS sin innpakning av egne apper, ikke Smart Media Cleanup. Appens egen versjon står nederst i menyen i appen og i image-taggen (`…:0.2.1`).
+**Om versjonsnummeret i TrueNAS:** «App Version: custom» og «Version: 1.0.0» under Application Info gjelder TrueNAS sin innpakning av egne apper, ikke Smart Media Cleanup. Appens egen versjon står nederst i menyen i appen og i image-taggen (`…:0.2.2`).
 
 ### 6. Legg til i Homarr (valgfritt)
 

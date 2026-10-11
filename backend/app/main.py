@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from . import db, jobs, settings, sync
 from .analysis import engine
 
-VERSION = os.environ.get("SMC_VERSION", "0.2.1")
+VERSION = os.environ.get("SMC_VERSION", "0.2.2")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -123,7 +123,7 @@ def status():
             "last_scan": db.kv_get(c, "last_scan"),
             "last_full_scan": db.kv_get(c, "last_full_scan"),
             "last_analysis": db.kv_get(c, "last_analysis"),
-            "running": db.rows(c, "SELECT * FROM jobs WHERE status IN ('queued','running') ORDER BY id"),
+            "running": jobs.overlay(db.rows(c, "SELECT * FROM jobs WHERE status IN ('queued','running') ORDER BY id")),
         }
 
 
@@ -402,7 +402,7 @@ def largest_files(library: str = "", ext: str = "", min_gb: float = 0, limit: in
 @app.get("/api/jobs")
 def list_jobs():
     with db.conn() as c:
-        return {"items": db.rows(c, "SELECT id,kind,status,progress,message,started,finished,error,log FROM jobs ORDER BY id DESC LIMIT 50"),
+        return {"items": jobs.overlay(db.rows(c, "SELECT id,kind,status,progress,message,started,finished,error,log FROM jobs ORDER BY id DESC LIMIT 50")),
                 "kinds": jobs.KINDS}
 
 

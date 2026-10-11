@@ -32,7 +32,7 @@ x-portals:
 services:
   mediacleanup:
     # Fast versjon: oppdater ved å endre taggen. Alternativ: :latest (siste utgivelse) eller :edge (siste fra main).
-    image: ghcr.io/pederko/smart-media-cleanup:0.2.1
+    image: ghcr.io/pederko/smart-media-cleanup:0.2.2
     restart: unless-stopped
     user: "568:568"
     ports:

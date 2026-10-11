@@ -24,6 +24,33 @@ _q: "queue.Queue[int]" = queue.Queue()
 _started = False
 _lock = threading.Lock()
 
+# Fremdrift for kjørende jobber holdes i minnet. Den skrives IKKE til databasen underveis:
+# jobbene (skanner, analyse) holder selv skrivetransaksjoner, og en egen skriving fra
+# fremdriftsrapporteringen ville vente på dem – en vranglås («database is locked»).
+PROGRESS_INTERVAL = 0.5
+_live: dict[int, dict] = {}
+_live_lock = threading.Lock()
+
+
+def _set_live(jid: int, progress: float, message: str) -> None:
+    with _live_lock:
+        _live[jid] = {"progress": progress, "message": message}
+
+
+def _clear_live(jid: int) -> None:
+    with _live_lock:
+        _live.pop(jid, None)
+
+
+def overlay(rows: list[dict]) -> list[dict]:
+    """Legger fersk fremdrift fra minnet over jobbrader fra databasen."""
+    with _live_lock:
+        live = dict(_live)
+    for r in rows:
+        if r.get("status") == "running" and r.get("id") in live:
+            r.update(live[r["id"]])
+    return rows
+
 
 def enqueue(kind: str) -> dict:
     if kind not in KINDS:
@@ -44,12 +71,11 @@ def _run(jid: int, kind: str):
 
     def progress(frac: float, msg: str):
         now = time.time()
-        if now - last_write[0] < 0.75 and frac < 1.0:
+        if now - last_write[0] < PROGRESS_INTERVAL and frac < 1.0:
             return
         last_write[0] = now
         p = base[0] + (base[1] - base[0]) * max(0.0, min(1.0, frac))
-        with db.conn() as c:
-            c.execute("UPDATE jobs SET progress=?, message=? WHERE id=?", (round(p, 3), msg, jid))
+        _set_live(jid, round(p, 3), msg)
 
     def phase(lo, hi, fn, *a):
         base[0], base[1] = lo, hi
@@ -84,6 +110,7 @@ def _worker():
             c.execute("UPDATE jobs SET status='running', started=?, message=? WHERE id=?",
                       (time.time(), "Starter", jid))
         kind = row[0]
+        _set_live(jid, 0.0, "Starter")
         try:
             result = _run(jid, kind)
             with db.conn() as c:
@@ -94,6 +121,8 @@ def _worker():
             with db.conn() as c:
                 c.execute("UPDATE jobs SET status='failed', finished=?, error=?, message=? WHERE id=?",
                           (time.time(), traceback.format_exc()[-4000:], f"Feilet: {e}", jid))
+        finally:
+            _clear_live(jid)
 
 
 def _short(obj) -> str:

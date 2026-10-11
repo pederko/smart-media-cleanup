@@ -68,6 +68,7 @@ def scan(progress: Progress, full: bool = False) -> dict:
             prev_dirs = {r[0]: r[1] for r in c.execute("SELECT path, mtime FROM dirs WHERE library=?", (lib["name"],))}
             c.execute("BEGIN")
             pending = 0
+            last_commit = time.time()
             stack = [root_c]
             while stack:
                 d = stack.pop()
@@ -86,7 +87,11 @@ def scan(progress: Progress, full: bool = False) -> dict:
                     seen += 1
                     if seen % 1000 == 0:
                         if throttle:
+                            # Slipp skrivelåsen mens vi venter, så andre skrivere ikke blokkeres
+                            c.execute("COMMIT")
                             time.sleep(throttle)
+                            c.execute("BEGIN")
+                            pending, last_commit = 0, time.time()
                         progress(min(0.95, seen / prev_total * 0.9), f"Skanner {lib['name']}: {seen} oppføringer")
                     try:
                         if e.is_dir(follow_symlinks=False):
@@ -117,10 +122,12 @@ def scan(progress: Progress, full: bool = False) -> dict:
                           "ON CONFLICT(path) DO UPDATE SET mtime=excluded.mtime, scan_id=excluded.scan_id",
                           (host_dir, lib["name"], dst.st_mtime, scan_id))
                 pending += 1
-                if pending >= 5000:
+                # Korte transaksjoner, så API og planlegger slipper til underveis
+                if pending >= 5000 or time.time() - last_commit > 2.0:
                     c.execute("COMMIT")
                     c.execute("BEGIN")
                     pending = 0
+                    last_commit = time.time()
             # Fjern det som ikke lenger finnes i dette biblioteket
             c.execute("DELETE FROM files WHERE library=? AND (scan_id IS NULL OR scan_id<>?)", (lib["name"], scan_id))
             c.execute("DELETE FROM dirs WHERE library=? AND (scan_id IS NULL OR scan_id<>?)", (lib["name"], scan_id))
