@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.7.0
+- Ny duplikatside: oppsummering øverst, faner per type med antall, søk, filter for kopier i nedlastingsmappen og sortering etter gevinst.
+- Velg hvilken fil som beholdes med ett klikk per gruppe, kryss av grupper og slett overflødige filer etter en oppsummering.
+- Sletting av duplikatfiler er av som standard og krever både en bryter i Innstillinger og at mappene er montert uten `:ro`. Filer Radarr/Sonarr kjenner slettes aldri slik, filen som beholdes blir alltid liggende, og hver fil kontrolleres (uendret siden skanning, inne i biblioteket, ikke symlenke) rett før sletting.
+
 ## 0.6.1
 - Slett-knapp direkte i tittelvisningen: «Slett filmen», «Slett hele serien» og «Slett sesong N», med gevinsten på knappen.
 - Avkrysning og «Slett valgte…» vises alltid i Forslag, Filmer, Serier og på brukersidene. Er sletting av, forklarer dialogen hvor den slås på.

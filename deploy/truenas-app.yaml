@@ -57,6 +57,8 @@ services:
       # SMC_PASSWORD: ""
     volumes:
       - /mnt/pool1/apps/mediacleanup/data:/data
+      # :ro = bare lesetilgang. For å kunne slette duplikatfiler (identiske kopier og ekstra versjoner)
+      # fra appen: fjern :ro på mappene det gjelder, og slå det på under Innstillinger → Sletting.
       - /mnt/pool1/FILM:/media/FILM:ro
       - /mnt/pool1/TV:/media/TV:ro
       - /mnt/pool1/Barn:/media/Barn:ro

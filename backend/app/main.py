@@ -17,10 +17,10 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import actions, db, jobs, posters, settings, sync, updates, views
+from . import actions, db, dupes, jobs, posters, settings, sync, updates, views
 from .analysis import engine
 
-VERSION = os.environ.get("SMC_VERSION", "0.6.1")
+VERSION = os.environ.get("SMC_VERSION", "0.7.0")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -161,6 +161,8 @@ def status():
             "version": VERSION,
             "read_only": not actions.enabled(),
             "actions_enabled": actions.enabled(),
+            "files_enabled": dupes.enabled(),
+            "writable": dupes.writable_libraries(),
             "services": db.kv_get(c, "service_status", {}),
             "last_sync": db.kv_get(c, "last_sync"),
             "last_scan": db.kv_get(c, "last_scan"),
@@ -425,15 +427,34 @@ def requester_detail(name: str, view: str = "all", sort: str = "requested", orde
 
 
 @app.get("/api/duplicates")
-def duplicates(kind: str = ""):
-    with db.conn() as c:
-        q = "SELECT * FROM duplicate_groups" + (" WHERE kind=?" if kind else "") + " ORDER BY reclaimable DESC, total DESC LIMIT 1000"
-        rows = db.rows(c, q, (kind,) if kind else ())
-    for r in rows:
-        fs = _j(r["files"], [])
-        r["keep_reason"] = next((x["keep_reason"] for x in fs if "keep_reason" in x), None)
-        r["files"] = [x for x in fs if "path" in x]
-    return {"items": rows}
+def duplicates(kind: str = "", q: str = "", library: str = "", where: str = "", sort: str = "reclaimable",
+               order: str = "desc", limit: int = 200, offset: int = 0):
+    return dupes.overview(kind, q, library, where, sort, order, limit, offset)
+
+
+class DupeChoice(BaseModel):
+    id: str
+    keep: str | None = None
+
+
+class DupeRequest(BaseModel):
+    groups: list[DupeChoice]
+    token: str | None = None
+
+
+@app.post("/api/duplicates/plan")
+def duplicates_plan(req: DupeRequest):
+    return dupes.plan([g.model_dump() for g in req.groups])
+
+
+@app.post("/api/duplicates/execute")
+def duplicates_execute(req: DupeRequest):
+    try:
+        return dupes.execute([g.model_dump() for g in req.groups], req.token or "")
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
 
 
 @app.get("/api/files/largest")

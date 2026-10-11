@@ -80,7 +80,7 @@ Slås på under **Innstillinger → Sletting**. Slett fra tittelvisningen (knapp
 | Hel serie | Slettes i Sonarr med filer. |
 | Én sesong | Sesongen avovervåkes i Sonarr, deretter slettes episodefilene. |
 
-Ekstra versjoner, identiske kopier, nedlastinger og titler utenfor Radarr/Sonarr gjøres fortsatt manuelt.
+**Duplikatfiler** (identiske kopier og ekstra versjoner) administreres normalt ikke av Radarr/Sonarr, og slettes derfor direkte fra disk under **Duplikater**. Det er av som standard og krever to ting: bryteren «Tillat sletting av overflødige duplikatfiler» under Innstillinger → Sletting, og at mappene er montert uten `:ro` i appens YAML. I hver gruppe velger du hvilken fil som beholdes. Filer Radarr/Sonarr kjenner slettes aldri på denne måten, filen som beholdes blir alltid liggende, og hver fil sjekkes rett før sletting (uendret siden skanning, inne i et bibliotek, ikke en symlenke). Titler utenfor Radarr/Sonarr og nedlastinger i qBittorrent gjøres fortsatt manuelt.
 
 Sikringer, uavhengig av hva som velges i grensesnittet:
 - Beskyttede titler (Barn, tagger, Plex-etiketter, beskyttede stier) avvises av serveren.
@@ -277,6 +277,14 @@ YAML-filen bruker `ghcr.io/pederko/smart-media-cleanup:latest`. Når en ny versj
 3. Oppdater med Apps → mediacleanup → ⋮ → **Update** (eller **Update All**). TrueNAS henter det nye imaget og starter appen på nytt. Databasen oppgraderes automatisk, og innstillinger og backup i `data/` beholdes.
 
 Appen oppdaterer seg aldri selv – du bestemmer når.
+
+**Hvor ofte sjekker TrueNAS?** Ifølge kildekoden til TrueNAS 25.10 sammenligner den imagene til alle apper med registeret (her ghcr.io) **én gang i døgnet** og når Apps-tjenesten starter (f.eks. etter omstart av TrueNAS), forutsatt at «Check for image updates» er på i Apps → Configuration → Settings. Update-knappen er grå til denne sjekken har funnet en nyere versjon. Vil du ikke vente, kan du kjøre sjekken selv i TrueNAS-shell:
+
+```sh
+midclt call app.image.op.check_update
+```
+
+Last Apps-siden på nytt – da skal mediacleanup vise «Update available», og Update henter imaget og starter appen på nytt. Pakken på GitHub må være offentlig for at TrueNAS skal kunne sjekke den.
 
 **Hvis TrueNAS ikke viser oppdateringen:** på TrueNAS 25.10.0 meldes det om feil i oppdateringsvarslene for egne apper. Da kan du hente imaget manuelt og starte appen på nytt: `docker pull ghcr.io/pederko/smart-media-cleanup:latest`, deretter Stop/Start på appen.
 

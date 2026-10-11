@@ -15,7 +15,7 @@ type S = {
   scanner: Record<string, number>;
   sync: { interval_hours: number };
   updates?: { check: boolean };
-  actions?: { enabled: boolean };
+  actions?: { enabled: boolean; files_enabled?: boolean };
   _env_locked: string[];
 };
 
@@ -187,13 +187,15 @@ export default function SettingsPage() {
 
       <section className="section">
         <h2>Sletting</h2>
-        <label className="check"><input type="checkbox" checked={!!s.actions?.enabled} onChange={(e) => setS({ ...s, actions: { enabled: e.target.checked } })} />Tillat sletting av filmer og serier via Radarr og Sonarr</label>
+        <label className="check"><input type="checkbox" checked={!!s.actions?.enabled} onChange={(e) => setS({ ...s, actions: { ...s.actions, enabled: e.target.checked } })} />Tillat sletting av filmer og serier via Radarr og Sonarr</label>
         <ul className="conseq small muted" style={{ maxWidth: 720 }}>
           <li>Filmer slettes i Radarr og serier i Sonarr, med filer. Filmer legges ikke på ekskluderingslisten.</li>
           <li>Enkeltsesonger avovervåkes i Sonarr før episodefilene slettes, så de ikke lastes ned igjen.</li>
           <li>Beskyttede titler (Barn, tagger, etiketter) kan aldri slettes. Alt annet – ekstra versjoner, kopier, nedlastinger – gjøres fortsatt manuelt.</li>
-          <li>Appen selv har bare lesetilgang til mediemappene. Alt som slettes, loggføres under Logg.</li>
+          <li>Alt som slettes, loggføres under Logg.</li>
         </ul>
+        <label className="check" style={{ marginTop: 12 }}><input type="checkbox" checked={!!s.actions?.files_enabled} onChange={(e) => setS({ ...s, actions: { enabled: !!s.actions?.enabled, files_enabled: e.target.checked } })} />Tillat sletting av overflødige duplikatfiler (identiske kopier og ekstra versjoner)</label>
+        <FilesAccess />
       </section>
 
       <section className="section">
@@ -207,6 +209,18 @@ export default function SettingsPage() {
         <button className="btn primary" onClick={save}>Lagre innstillinger</button>
       </div>
     </>
+  );
+}
+
+function FilesAccess() {
+  const st = useFetch<{ writable: Record<string, boolean> }>("/api/status");
+  const w = st.data?.writable ?? {};
+  const ro = Object.entries(w).filter(([, v]) => !v).map(([k]) => k);
+  return (
+    <div className="small muted" style={{ maxWidth: 720 }}>
+      <p style={{ margin: "6px 0" }}>Duplikater administreres normalt ikke av Radarr/Sonarr, så de slettes direkte fra disk. Det krever at mappene er montert med skrivetilgang: fjern <code>:ro</code> på de aktuelle linjene under <code>volumes</code> i appens YAML (Apps → mediacleanup → Edit). Filer Radarr/Sonarr kjenner, slettes aldri på denne måten, og filen som beholdes, blir alltid liggende.</p>
+      {Object.keys(w).length > 0 && <p style={{ margin: "6px 0" }}>Skrivetilgang nå: {Object.entries(w).map(([k, v]) => `${k} ${v ? "ja" : "nei"}`).join(", ")}.{ro.length > 0 ? " Mapper uten skrivetilgang hoppes over." : ""}</p>}
+    </div>
   );
 }
 

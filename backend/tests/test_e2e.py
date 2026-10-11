@@ -422,3 +422,82 @@ def test_delete_stops_when_folder_changed(client, no_refresh):
     assert not [w for w in ms.WRITES if w[0] == "DELETE"]
     assert no_refresh == []
     ms.PATH_OVERRIDE.clear()
+
+
+# ------------------------------------------------------------------ duplikater (endrer filer på disk – kjøres helt sist)
+
+def _enable_files(client, on=True):
+    st = client.get("/api/settings").json()
+    st["actions"] = {**st.get("actions", {}), "files_enabled": on}
+    client.put("/api/settings", json=st)
+
+
+def _media_root():
+    return settings.get()["libraries"][0]["container_path"].rsplit("/", 1)[0]
+
+
+def test_duplicates_overview(client):
+    r = client.get("/api/duplicates").json()
+    s = r["summary"]
+    assert s["identical"]["groups"] == 1 and s["identical"]["in_downloads"] == 1
+    assert s["versions"]["groups"] == 1 and s["versions"]["reclaimable"] == ms.EXTRA_TWIN[1]
+    assert s["hardlink"]["groups"] == 1 and s["hardlink"]["reclaimable"] == 0
+    only_dl = client.get("/api/duplicates", params={"where": "downloads"}).json()
+    assert {g["kind"] for g in only_dl["items"]} == {"identical", "hardlink"}
+    twin = client.get("/api/duplicates", params={"kind": "versions", "q": "twin"}).json()["items"][0]
+    assert twin["title_name"] == "Twin" and any(f["managed"] for f in twin["files"])
+
+
+def test_duplicate_delete_disabled(client, no_refresh):
+    _enable_files(client, False)
+    g = client.get("/api/duplicates", params={"kind": "identical"}).json()["items"][0]
+    p = client.post("/api/duplicates/plan", json={"groups": [{"id": g["id"]}]}).json()
+    assert p["enabled"] is False
+    r = client.post("/api/duplicates/execute", json={"groups": [{"id": g["id"]}], "token": p["token"]})
+    assert r.status_code == 403
+
+
+def test_duplicate_versions_never_delete_managed_file(client, no_refresh):
+    _enable_files(client)
+    g = client.get("/api/duplicates", params={"kind": "versions"}).json()["items"][0]
+    unmanaged = next(f["path"] for f in g["files"] if not f["managed"])
+    p = client.post("/api/duplicates/plan", json={"groups": [{"id": g["id"], "keep": unmanaged}]}).json()
+    it = p["items"][0]
+    assert not it["executable"] and "Radarr/Sonarr" in it["files"][0]["reason"]
+
+
+def test_duplicate_delete_identical_copy_from_disk(client, no_refresh):
+    import os
+    _enable_files(client)
+    g = client.get("/api/duplicates", params={"kind": "identical"}).json()["items"][0]
+    p = client.post("/api/duplicates/plan", json={"groups": [{"id": g["id"]}]}).json()
+    it = p["items"][0]
+    assert it["executable"] and it["keep"] == "/mnt/pool1/FILM/Copy (2013)/Copy.2013.mkv"
+    assert [f["path"] for f in it["files"]] == ["/mnt/pool1/tmp/Copy.2013.mkv"] and it["warn_downloads"]
+    assert p["freed"] == ms.SIZES[6]
+    root = _media_root()
+    assert os.path.exists(f"{root}/tmp/Copy.2013.mkv")
+    r = client.post("/api/duplicates/execute", json={"groups": [{"id": g["id"]}], "token": p["token"]}).json()
+    assert r["done"] == 1, r
+    assert not os.path.exists(f"{root}/tmp/Copy.2013.mkv")
+    assert os.path.exists(f"{root}/FILM/Copy (2013)/Copy.2013.mkv")  # beholdt
+    assert no_refresh == ["refresh"]
+    h = client.get("/api/actions/history").json()["items"][0]
+    assert h["service"] == "filsystem" and h["status"] == "utført"
+
+
+def test_duplicate_delete_refuses_changed_file(client, no_refresh):
+    import os
+    _enable_files(client)
+    g = client.get("/api/duplicates", params={"kind": "versions"}).json()["items"][0]
+    p = client.post("/api/duplicates/plan", json={"groups": [{"id": g["id"]}]}).json()
+    assert p["items"][0]["executable"]
+    extra = f"{_media_root()}/FILM/Twin (2012)/Twin.2012.2160p.mkv"
+    os.utime(extra, (1_000_000_000, 1_000_000_000))  # endres etter skanning
+    r = client.post("/api/duplicates/execute", json={"groups": [{"id": g["id"]}], "token": p["token"]})
+    # Planen bygges på nytt ved utførelse; endringen gjør filen ikke-slettbar -> token avviker eller filen avvises
+    if r.status_code == 200:
+        assert r.json()["done"] == 0
+    else:
+        assert r.status_code == 409
+    assert os.path.exists(extra)

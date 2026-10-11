@@ -75,62 +75,6 @@ export function TitlesPage() {
   );
 }
 
-type Dup = { id: string; kind: string; title_key: string | null; label: string; total: number; reclaimable: number; keep_reason: string | null;
-  files: { path: string; size: number; resolution: string | null; managed: boolean; keep: boolean; nlink: number }[] };
-
-const DUP_KIND: Record<string, [string, string]> = {
-  identical: ["Identiske kopier", "Samme størrelse og samme innhold (delvis hash av start, midt og slutt), men separate filer på disk. Én kan fjernes uten å miste noe."],
-  versions: ["Flere versjoner", "Samme film eller episode i ulike utgaver eller oppløsninger. Innholdet er ikke identisk, så du må velge hvilken du vil beholde."],
-  hardlink: ["Hardlenker", "Samme fil på disk under flere navn. Dette er ikke duplikater og tar ikke ekstra plass."],
-};
-
-export function DuplicatesPage() {
-  const tick = useRefreshTick();
-  const openTitle = useOpenTitle();
-  const [kind, setKind] = useState("identical");
-  const { data, error } = useFetch<{ items: Dup[] }>(`/api/duplicates${qs({ kind })}`, [tick]);
-  const total = data?.items.reduce((s, d) => s + d.reclaimable, 0) ?? 0;
-  return (
-    <>
-      <h1>Duplikater og versjoner</h1>
-      <p className="lede">Lik tittel alene regnes aldri som duplikat. Tre ulike tilfeller holdes adskilt.</p>
-      <div className="toolbar">
-        <div className="seg" role="group" aria-label="Type">
-          {Object.entries(DUP_KIND).map(([k, [l]]) => <button key={k} aria-pressed={kind === k} onClick={() => setKind(k)}>{l}</button>)}
-        </div>
-      </div>
-      <p className="muted">{DUP_KIND[kind][1]}</p>
-      <ErrorNote error={error} />
-      {data && kind !== "hardlink" && <p className="small muted">{data.items.length} {data.items.length === 1 ? "gruppe" : "grupper"}, opptil {bytes(total)} kan frigjøres.</p>}
-      {data?.items.length === 0 && <div className="empty">Ingen funnet.</div>}
-      <div className="grid" style={{ gap: 14 }}>
-        {data?.items.map((d) => (
-          <section key={d.id} className="panel">
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <h3>{d.title_key ? <button className="btn small" style={{ border: 0, background: "none", padding: 0, fontWeight: 600, fontSize: 15 }} onClick={() => openTitle(d.title_key!)}>{d.label.split(": ").slice(1).join(": ") || d.label}</button> : d.label}</h3>
-              {d.kind !== "hardlink" && <span className="num">{bytes(d.reclaimable)} kan frigjøres</span>}
-            </div>
-            <table>
-              <tbody>
-                {d.files.map((f) => (
-                  <tr key={f.path}>
-                    <td>{fileName(f.path)}<div className="path">{f.path.split("/").slice(0, -1).join("/")}</div></td>
-                    <td className="small">{f.resolution ?? ""}</td>
-                    <td className="small">{f.managed ? "Radarr/Sonarr" : ""}</td>
-                    <td className="small">{d.kind === "hardlink" ? "" : f.keep ? <b>Beholdes</b> : <span className="muted">Kan fjernes</span>}</td>
-                    <td className="r num">{bytes(f.size)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {d.keep_reason && d.kind !== "hardlink" && <p className="small muted" style={{ marginBottom: 0 }}>Foreslått beholdt fordi den {d.keep_reason}.</p>}
-          </section>
-        ))}
-      </div>
-    </>
-  );
-}
-
 type F = { path: string; size: number; library: string; ext: string; nlink: number; mtime: number; is_extra: number;
   title_key: string | null; title_name: string | null; play_count: number | null; last_played: number | null };
 

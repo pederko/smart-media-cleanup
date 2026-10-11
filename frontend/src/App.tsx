@@ -4,7 +4,8 @@ import { RefreshContext, TitleContext } from "./components/common";
 import TitleDrawer from "./components/TitleDrawer";
 import OverviewPage from "./pages/Overview";
 import SuggestionsPage from "./pages/Suggestions";
-import { DuplicatesPage, FilesPage, TitlesPage } from "./pages/Lists";
+import { FilesPage, TitlesPage } from "./pages/Lists";
+import DuplicatesPage from "./pages/Duplicates";
 import SettingsPage, { JobsPage, LogPage } from "./pages/Settings";
 import { LibraryPage, UserPage, UsersPage } from "./pages/Library";
 

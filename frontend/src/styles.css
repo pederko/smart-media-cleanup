@@ -319,3 +319,9 @@ table.compact a:hover { text-decoration: underline; text-underline-offset: 3px; 
 .ro-link:hover { color: var(--text); }
 .drawer-bg + .drawer + .drawer-bg { z-index: 30; }
 .drawer-bg + .drawer + .drawer-bg + .drawer { z-index: 31; }
+
+/* ---------- duplikater ---------- */
+.dupe-head { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
+.dupe.checked { border-color: var(--accent); }
+.dupe tr.keep td { color: var(--text); }
+.dupe tr:not(.keep) td:nth-child(2) { color: var(--muted); }
