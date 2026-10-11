@@ -17,10 +17,10 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import actions, db, downloads, dupes, jobs, plexcheck, posters, releases, settings, sync, updates, views
+from . import actions, db, downloads, dupes, jobs, plexcheck, posters, releases, settings, swaps, sync, updates, views
 from .analysis import engine
 
-VERSION = os.environ.get("SMC_VERSION", "0.9.0")
+VERSION = os.environ.get("SMC_VERSION", "0.10.0")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -29,6 +29,7 @@ logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
 async def lifespan(_app):
     db.init()
     actions.init()
+    swaps.init()
     jobs.start(schedule=os.environ.get("SMC_DISABLE_SCHEDULER") != "1")
     with db.conn() as c:
         if not db.kv_get(c, "first_start"):
@@ -489,6 +490,56 @@ def find_releases(key: str, season: int | None = None, refresh: bool = False):
         return releases.search(key, season, refresh)
     except actions.ActionError as e:
         raise HTTPException(400, str(e))
+
+
+class SwapRequest(BaseModel):
+    key: str
+    guid: str
+    indexer_id: int
+    season: int | None = None
+    after_swap: str = "none"
+
+
+def _swap_call(fn, *a, **kw):
+    try:
+        return fn(*a, **kw)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except actions.ActionError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/swaps")
+def swap_start(req: SwapRequest):
+    return _swap_call(swaps.start, req.key, req.guid, req.indexer_id, req.season, req.after_swap)
+
+
+@app.get("/api/swaps")
+def swap_list(key: str = ""):
+    return {"items": swaps.list_swaps(key or None)}
+
+
+@app.get("/api/swaps/{sid}")
+def swap_get(sid: int):
+    return _swap_call(swaps.get, sid)
+
+
+@app.post("/api/swaps/{sid}/poll")
+def swap_poll(sid: int):
+    swaps.poll(sid)
+    return _swap_call(swaps.get, sid)
+
+
+@app.post("/api/swaps/{sid}/cancel")
+def swap_cancel(sid: int):
+    return _swap_call(swaps.cancel, sid)
+
+
+@app.get("/api/quality-profiles/{service}")
+def quality_profiles(service: str):
+    if service not in ("radarr", "sonarr"):
+        raise HTTPException(404, "Ukjent tjeneste")
+    return {"items": _swap_call(swaps.quality_profiles, service)}
 
 
 @app.get("/api/plex-check")

@@ -151,6 +151,11 @@ def _scheduler():
             elif now - last_scan > s["scanner"]["interval_hours"] * 3600:
                 enqueue("refresh")
             updates.check()
+            try:
+                from . import swaps
+                swaps.poll()
+            except Exception:
+                log.exception("Oppfølging av bytter feilet")
             with db.conn() as c:
                 last_backup = db.kv_get(c, "last_backup", 0) or 0
             if now - last_backup > 86400:

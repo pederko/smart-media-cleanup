@@ -13,7 +13,8 @@
 #   mkdir -p /mnt/pool1/apps/mediacleanup/data
 #   chown -R 568:568 /mnt/pool1/apps/mediacleanup/data
 #
-# Alle mediemapper monteres skrivebeskyttet (:ro). Appen kan ikke slette eller endre filer.
+# Alle mediemapper monteres skrivebeskyttet (:ro) som standard. Da kan appen bare slette via
+# Radarr/Sonarr (hvis det slås på i appen), aldri direkte på disk. Se kommentaren ved volumes.
 # Adresser og nøkler til Radarr/Sonarr/Plex/Tautulli/Seerr legges inn i appen etterpå
 # (Innstillinger), eller som miljøvariabler under «environment» nedenfor.
 #
@@ -32,7 +33,7 @@ x-portals:
 services:
   mediacleanup:
     # :latest = siste utgivelse. TrueNAS viser «Update available» når en ny versjon er ute,
-    # og Apps → mediacleanup → ⋮ → Update henter den. Vil du låse versjonen: bruk f.eks. :0.3.0
+    # og Apps → mediacleanup → ⋮ → Update henter den. Vil du låse versjonen: bruk f.eks. :0.10.0
     image: ghcr.io/pederko/smart-media-cleanup:latest
     restart: unless-stopped
     user: "568:568"
@@ -58,7 +59,8 @@ services:
     volumes:
       - /mnt/pool1/apps/mediacleanup/data:/data
       # :ro = bare lesetilgang. For å kunne slette duplikatfiler (identiske kopier og ekstra versjoner)
-      # fra appen: fjern :ro på mappene det gjelder, og slå det på under Innstillinger → Sletting.
+      # og gamle nedlastinger i tmp fra appen: fjern :ro på mappene det gjelder, og slå på
+      # «Tillat sletting av filer» under Innstillinger → Sletting.
       - /mnt/pool1/FILM:/media/FILM:ro
       - /mnt/pool1/TV:/media/TV:ro
       - /mnt/pool1/Barn:/media/Barn:ro   # fjern :ro for å kunne rydde duplikater i Barn

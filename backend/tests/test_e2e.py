@@ -355,6 +355,59 @@ def test_find_smaller_season_pack(client):
     assert r["episodes"] == 2
 
 
+def test_swap_download_first_then_replace(client):
+    key = _title("Big Movie")["key"]
+    rel = next(r for r in client.get(f"/api/releases/{key}").json()["releases"] if r["recommended"])
+    body = {"key": key, "guid": rel["guid"], "indexer_id": rel["indexer_id"], "after_swap": "unmonitor"}
+    _enable_actions(client, False)
+    assert client.post("/api/swaps", json=body).status_code == 403
+    _enable_actions(client, True)
+    try:
+        sw = client.post("/api/swaps", json=body).json()
+        assert sw["state"] == "venter" and sw["old_size"] == 80 * GB
+        assert ("POST", "/radarr/api/v3/release", {}, {"guid": rel["guid"], "indexerId": 1}) in ms.WRITES
+        assert client.post("/api/swaps", json=body).status_code == 400          # ett bytte om gangen
+        n = len(ms.WRITES)
+        ms.QUEUE[:] = [{"title": rel["title"], "downloadId": "DL1", "size": 100, "sizeleft": 40, "status": "downloading",
+                        "trackedDownloadState": "downloading", "trackedDownloadStatus": "ok"}]
+        sw = client.post(f"/api/swaps/{sw['id']}/poll").json()
+        assert sw["state"] == "laster_ned" and sw["download_id"] == "DL1" and len(ms.WRITES) == n
+        # Ferdig, men med en avvisning som ikke handler om oppgradering → ingenting slettes
+        ms.QUEUE[0].update(sizeleft=0, status="completed", trackedDownloadState="importPending")
+        ms.MANUAL[:] = [{"path": "/downloads/x/Big.mkv", "quality": {}, "rejections": [{"reason": "Sample"}]}]
+        sw = client.post(f"/api/swaps/{sw['id']}/poll").json()
+        assert sw["state"] == "trenger_hjelp" and "Sample" in sw["message"] and len(ms.WRITES) == n
+        # Nytt forsøk der bare «ikke en oppgradering» står i veien
+        sw = client.post("/api/swaps", json=body).json()
+        ms.MANUAL[:] = [{"path": "/downloads/x/Big.mkv", "quality": {"quality": {"id": 7}},
+                         "rejections": [{"reason": "Not an upgrade for existing movie file(s)"}]}]
+        sw = client.post(f"/api/swaps/{sw['id']}/poll").json()
+        assert sw["state"] == "importerer"
+        new = ms.WRITES[n:]
+        assert ("DELETE", "/radarr/api/v3/moviefile/301", {}, None) in new
+        imp = next(w for w in new if w[0] == "POST" and w[3].get("name") == "ManualImport")
+        assert imp[3]["files"][0]["path"] == "/downloads/x/Big.mkv" and imp[3]["files"][0]["movieId"] == 1
+        assert new.index(("DELETE", "/radarr/api/v3/moviefile/301", {}, None)) < new.index(imp)  # slett før import
+        ms.QUEUE[:] = []
+        sw = client.post(f"/api/swaps/{sw['id']}/poll").json()
+        assert sw["state"] == "ferdig" and "Avovervåket" in sw["message"]
+        put = next(w for w in ms.WRITES if w[0] == "PUT" and w[1] == "/radarr/api/v3/movie/1")
+        assert put[3]["monitored"] is False
+        assert len(client.get(f"/api/swaps?key={key}").json()["items"]) == 2
+        assert [p["name"] for p in client.get("/api/quality-profiles/radarr").json()["items"]] == ["Any", "HD-1080p"]
+    finally:
+        _enable_actions(client, False)
+        ms.QUEUE[:] = []
+        ms.MANUAL[:] = []
+        ms.WRITES.clear()
+
+
+def _enable_actions(client, on):
+    st = client.get("/api/settings").json()
+    st["actions"] = {**st.get("actions", {}), "enabled": on}
+    client.put("/api/settings", json=st)
+
+
 def test_downloads_overview(client):
     r = client.get("/api/downloads").json()
     by = {i["name"]: i for i in r["items"]}

@@ -249,7 +249,51 @@ def r_movie(mid: int, x_api_key: str = Header(None)):
     if ("movie", mid) in DELETED:
         raise HTTPException(404)
     m = next(m for m in MOVIES if m[0] == mid)
-    return {"id": mid, "title": m[1], "path": PATH_OVERRIDE.get(("movie", mid), m[3])}
+    return {"id": mid, "title": m[1], "path": PATH_OVERRIDE.get(("movie", mid), m[3]), "hasFile": True, "monitored": True,
+            "qualityProfileId": 1}
+
+
+@app.put("/radarr/api/v3/movie/{mid}")
+async def r_movie_put(mid: int, request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    body = await request.json()
+    WRITES.append(("PUT", f"/radarr/api/v3/movie/{mid}", {}, body))
+    return body
+
+
+# ---- bytte: grab, kø, manuell import, kvalitetsprofiler
+QUEUE: list = []          # elementer som returneres fra queue/details
+MANUAL: list = []         # import-forslag fra manualimport
+
+
+@app.post("/radarr/api/v3/release")
+@app.post("/sonarr/api/v3/release")
+async def arr_grab(request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    body = await request.json()
+    WRITES.append(("POST", request.url.path, {}, body))
+    return {"guid": body["guid"]}
+
+
+@app.get("/radarr/api/v3/queue/details")
+@app.get("/sonarr/api/v3/queue/details")
+def arr_queue(x_api_key: str = Header(None)):
+    _check(x_api_key)
+    return QUEUE
+
+
+@app.get("/radarr/api/v3/manualimport")
+@app.get("/sonarr/api/v3/manualimport")
+def arr_manual(downloadId: str, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    return MANUAL
+
+
+@app.get("/radarr/api/v3/qualityprofile")
+@app.get("/sonarr/api/v3/qualityprofile")
+def arr_profiles(x_api_key: str = Header(None)):
+    _check(x_api_key)
+    return [{"id": 1, "name": "Any"}, {"id": 4, "name": "HD-1080p"}]
 
 
 @app.delete("/radarr/api/v3/movie/{mid}")

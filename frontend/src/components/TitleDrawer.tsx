@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import DeleteDialog from "./DeleteDialog";
 import ReleaseSearch from "./ReleaseSearch";
+import SwapList from "./Swaps";
 import { Suggestion } from "../api";
 import { ago, bytes, date, fileName, KIND_LABEL } from "../format";
 import { Breakdown, RiskPill, useFetch, Poster } from "./common";
@@ -107,6 +108,7 @@ export default function TitleDrawer({ id, onClose }: { id: string; onClose: () =
                         <ReleaseSearch key={sn} titleKey={data.key} season={+sn} label={`Sesong ${sn} (${bytes(seasonSizes[sn])})`} />
                       ))}
                 </div>
+                <SwapList titleKey={data.key} />
               </section>
             )}
 

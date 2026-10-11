@@ -1,5 +1,12 @@
 # Endringslogg
 
+## 0.10.0
+- **Bytt til mindre versjon** – «last ned først, bytt etterpå». Fra «Finn mindre versjon» velger du en utgivelse og trykker Bytt. Radarr/Sonarr laster den ned mens den store filen blir liggende. Når nedlastingen er ferdig og den eneste innvendingen er «ikke en oppgradering», slettes den gamle filen via Radarr/Sonarr og den nye importeres. Andre innvendinger stopper byttet uten at noe slettes.
+- Valgfritt etter byttet: avovervåk tittelen/sesongen eller bytt kvalitetsprofil, så den ikke oppgraderes tilbake.
+- Status for bytter i tittelvisningen og under Jobber, med historikk og mulighet til å avbryte. Følges opp hvert 5. minutt i bakgrunnen.
+- Bytte krever bryteren for sletting via Radarr/Sonarr, og beskyttede titler kan ikke byttes.
+- README oppdatert med alt som er kommet til siden 0.2: sletting, duplikater, nedlastinger, Plex-avvik, bytte og oppdateringssjekken i TrueNAS.
+
 ## 0.9.0
 - Ny side **Plex-avvik**: hva som ligger på disk uten å være i Plex (med sannsynlig årsak: ikke i noe Plex-bibliotek, diskbilde/ISO, nylig lagt til, eller ikke funnet av Plex), og hva Plex peker på som mangler på disk.
 - «Be Plex skanne» starter en delvis skanning av akkurat den mappen i riktig Plex-bibliotek.
