@@ -31,8 +31,9 @@ x-portals:
 
 services:
   mediacleanup:
-    # Fast versjon: oppdater ved å endre taggen. Alternativ: :latest (siste utgivelse) eller :edge (siste fra main).
-    image: ghcr.io/pederko/smart-media-cleanup:0.2.2
+    # :latest = siste utgivelse. TrueNAS viser «Update available» når en ny versjon er ute,
+    # og Apps → mediacleanup → ⋮ → Update henter den. Vil du låse versjonen: bruk f.eks. :0.3.0
+    image: ghcr.io/pederko/smart-media-cleanup:latest
     restart: unless-stopped
     user: "568:568"
     ports:

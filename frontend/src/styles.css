@@ -268,3 +268,8 @@ pre.log { white-space: pre-wrap; font-size: 12px; background: var(--panel-2); pa
 table.compact td, table.compact th { padding: 6px 6px; font-size: 13.5px; }
 table.compact a { text-decoration: none; }
 table.compact a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.banner.update { border-color: var(--accent); }
+.banner.update span { flex: 1; }
+.update-link { color: var(--accent); font-weight: 560; text-decoration: none; }
+.update-link:hover { text-decoration: underline; }

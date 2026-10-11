@@ -14,6 +14,7 @@ type S = {
   protection: { tags: string[]; plex_labels: string[]; paths: string[] };
   scanner: Record<string, number>;
   sync: { interval_hours: number };
+  updates?: { check: boolean };
   _env_locked: string[];
 };
 
@@ -183,12 +184,41 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      <section className="section">
+        <h2>Oppdateringer</h2>
+        <UpdateBox enabled={s.updates?.check ?? true} onToggle={(v) => setS({ ...s, updates: { check: v } })} />
+      </section>
+
       <div className="tray">
         <div className="grow small muted">{saved ?? saveErr ?? "Endringer lagres først når du trykker «Lagre innstillinger»."}</div>
         <button className="btn" onClick={() => data && setS(structuredClone(data))}>Forkast endringer</button>
         <button className="btn primary" onClick={save}>Lagre innstillinger</button>
       </div>
     </>
+  );
+}
+
+function UpdateBox({ enabled, onToggle }: { enabled: boolean; onToggle: (v: boolean) => void }) {
+  const [u, setU] = useState<{ current: string; latest: string | null; available: boolean; checked: number | null; ok: boolean | null; url: string | null } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get<typeof u>("/api/update").then(setU).catch(() => {}); }, []);
+  const checkNow = async () => {
+    setBusy(true);
+    try { setU(await api.get("/api/update?refresh=true")); } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ display: "grid", gap: 10, maxWidth: 640 }}>
+      <label className="check"><input type="checkbox" checked={enabled} onChange={(e) => onToggle(e.target.checked)} />Se etter nye versjoner på GitHub (hver 6. time)</label>
+      {u && (
+        <p className="small muted" style={{ margin: 0 }}>
+          Du kjører {u.current}.{" "}
+          {u.latest ? (u.available ? <>Versjon <a href={u.url ?? "#"} target="_blank" rel="noreferrer">{u.latest}</a> er tilgjengelig.</> : <>Siste utgivelse er {u.latest}, du er oppdatert.</>) : "Ingen informasjon om utgivelser ennå."}
+          {u.checked ? ` Sjekket ${ago(u.checked)}${u.ok === false ? " (feilet – har containeren tilgang til internett?)" : ""}.` : ""}
+        </p>
+      )}
+      <p className="small muted" style={{ margin: 0 }}>Appen oppdaterer seg aldri selv. Med <code>:latest</code> i YAML gjør du det i TrueNAS: Apps → mediacleanup → ⋮ → Update.</p>
+      <div><button className="btn small" onClick={checkNow} disabled={busy || !enabled}>{busy ? "Sjekker…" : "Sjekk nå"}</button></div>
+    </div>
   );
 }
 

@@ -17,10 +17,10 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db, jobs, settings, sync
+from . import db, jobs, settings, sync, updates
 from .analysis import engine
 
-VERSION = os.environ.get("SMC_VERSION", "0.2.2")
+VERSION = os.environ.get("SMC_VERSION", "0.3.0")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -110,6 +110,11 @@ FROM suggestions s LEFT JOIN titles t ON t.key = s.title_key
 @app.get("/api/health")
 def health():
     return {"ok": True, "version": VERSION, "read_only": True}
+
+
+@app.get("/api/update")
+def update_status(refresh: bool = False):
+    return updates.check(force=True) if refresh else updates.status()
 
 
 @app.get("/api/status")

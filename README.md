@@ -89,8 +89,8 @@ Kildekoden ligger på [github.com/pederko/smart-media-cleanup](https://github.co
 
 | Tagg | Innhold |
 |---|---|
-| `0.2.2`, `0.2` | En bestemt utgivelse (anbefalt i YAML) |
-| `latest` | Siste utgivelse |
+| `latest` | Siste utgivelse (brukes i YAML-filen) |
+| `0.3.0`, `0.3` | En bestemt utgivelse, hvis du vil låse versjonen |
 | `edge` | Siste commit på `main` (kan være uferdig) |
 
 Er repoet offentlig, kan TrueNAS hente imaget uten innlogging. Er det privat, må du enten gjøre *pakken* offentlig (GitHub → Packages → smart-media-cleanup → Package settings → Change visibility) eller legge inn GHCR-innlogging i TrueNAS med en token som har `read:packages`.
@@ -120,7 +120,7 @@ Bruk **Install via YAML**, ikke skjemaet «Install iX App» (det med felter for 
 |---|---|---|
 | Application name | Name | `mediacleanup` |
 | Image Configuration | Repository | `ghcr.io/pederko/smart-media-cleanup` |
-| | Tag | `0.2.2` |
+| | Tag | `latest` |
 | Container Configuration | Timezone | `Europe/Oslo` |
 | Security Context | Privileged | av |
 | | Custom User | på, User ID `568`, Group ID `568` |
@@ -146,7 +146,7 @@ sh /tmp/set-icon.sh mediacleanup
 
 Last Apps-siden på nytt. Ikonet kan bli tilbakestilt når appen redigeres (Edit) – kjør i så fall skriptet igjen. Det påvirker bare visningen i TrueNAS.
 
-**Om versjonsnummeret i TrueNAS:** «App Version: custom» og «Version: 1.0.0» under Application Info gjelder TrueNAS sin innpakning av egne apper, ikke Smart Media Cleanup. Appens egen versjon står nederst i menyen i appen og i image-taggen (`…:0.2.2`).
+**Om versjonsnummeret i TrueNAS:** «App Version: custom» og «Version: 1.0.0» under Application Info gjelder TrueNAS sin innpakning av egne apper, ikke Smart Media Cleanup. Appens egen versjon står nederst i menyen i appen og i informasjonen om imaget i TrueNAS.
 
 ### 6. Legg til i Homarr (valgfritt)
 
@@ -252,11 +252,19 @@ Bare én jobb kjører om gangen. Inkrementell skanning leser bare filinformasjon
 
 ## Oppdatering
 
-1. Se hva som er nytt i [CHANGELOG.md](CHANGELOG.md) eller under *Releases* på GitHub.
-2. Apps → mediacleanup → **Edit**, endre taggen i `image:` (f.eks. `0.2.0` → `0.3.0`) og lagre. TrueNAS henter det nye imaget og starter appen på nytt.
-3. Databasen oppgraderes automatisk ved oppstart. Innstillinger og backup i `data/` beholdes.
+YAML-filen bruker `ghcr.io/pederko/smart-media-cleanup:latest`. Når en ny versjon publiseres:
 
-Gå tilbake ved å sette forrige tagg. Bruker du `:latest` i stedet for en fast versjon, hentes ny versjon når appen installeres på nytt eller imaget hentes manuelt (`docker pull ghcr.io/pederko/smart-media-cleanup:latest` og så omstart). Fast tagg gir mest kontroll over når oppdateringer skjer.
+1. Appen viser et banner («Versjon X er tilgjengelig») med lenke til hva som er nytt. Den sjekker GitHub hver 6. time; kan slås av under Innstillinger → Oppdateringer.
+2. TrueNAS følger med på imaget og viser **Update available** på appen.
+3. Oppdater med Apps → mediacleanup → ⋮ → **Update** (eller **Update All**). TrueNAS henter det nye imaget og starter appen på nytt. Databasen oppgraderes automatisk, og innstillinger og backup i `data/` beholdes.
+
+Appen oppdaterer seg aldri selv – du bestemmer når.
+
+**Hvis TrueNAS ikke viser oppdateringen:** på TrueNAS 25.10.0 meldes det om feil i oppdateringsvarslene for egne apper. Da kan du hente imaget manuelt og starte appen på nytt: `docker pull ghcr.io/pederko/smart-media-cleanup:latest`, deretter Stop/Start på appen.
+
+**Låse versjonen:** bytt `:latest` med en bestemt versjon (f.eks. `:0.3.0`) under Edit. Gå tilbake til en tidligere versjon på samme måte.
+
+**Bytte fra fast versjon til latest:** har du installert med en fast tagg (f.eks. `:0.2.2`), gå til Apps → mediacleanup → **Edit**, endre taggen til `latest` og lagre. Det trengs bare én gang.
 
 ### Utgivelser (for utvikling)
 

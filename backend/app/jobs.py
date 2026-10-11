@@ -7,7 +7,7 @@ import threading
 import time
 import traceback
 
-from . import db, scanner, settings, sync
+from . import db, scanner, settings, sync, updates
 from .analysis import engine
 
 log = logging.getLogger("smc.jobs")
@@ -150,6 +150,7 @@ def _scheduler():
                 enqueue("analyze")
             elif now - last_scan > s["scanner"]["interval_hours"] * 3600:
                 enqueue("refresh")
+            updates.check()
             with db.conn() as c:
                 last_backup = db.kv_get(c, "last_backup", 0) or 0
             if now - last_backup > 86400:

@@ -22,12 +22,15 @@ function routeFromHash() {
 }
 
 type Status = { running: Job[]; version: string; services: Record<string, { ok: boolean; configured?: boolean }> };
+type Update = { available: boolean; current: string; latest: string | null; url: string | null };
 
 export default function App() {
   const [route, setRoute] = useState(routeFromHash());
   const [tick, setTick] = useState(0);
   const [title, setTitle] = useState<string | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [dismissed, setDismissed] = useState<string>(() => { try { return localStorage.getItem("smc.update.dismissed") || ""; } catch { return ""; } });
   const [theme, setTheme] = useState<string>(() => { try { return localStorage.getItem("smc.theme") || "dark"; } catch { return "dark"; } });
   const wasRunning = useRef(false);
 
@@ -55,6 +58,18 @@ export default function App() {
     const t = setInterval(poll, 3000);
     return () => { alive = false; clearInterval(t); };
   }, []);
+
+  useEffect(() => {
+    const load = () => api.get<Update>("/api/update").then(setUpdate).catch(() => {});
+    load();
+    const t = setInterval(load, 30 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
+  const dismissUpdate = () => {
+    if (!update?.latest) return;
+    setDismissed(update.latest);
+    try { localStorage.setItem("smc.update.dismissed", update.latest); } catch { /* ignore */ }
+  };
 
   const go = useCallback((id: string) => { window.location.hash = `#/${id}`; }, []);
   const running = status?.running.find((j) => j.status === "running") ?? status?.running[0];
@@ -90,9 +105,20 @@ export default function App() {
               <span className="ro">Skrivebeskyttet</span>
               <button className="btn small" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? "Lyst tema" : "Mørkt tema"}</button>
               <span className="faint">Versjon {status?.version ?? ""}</span>
+              {update?.available && <a className="update-link" href={update.url ?? "#"} target="_blank" rel="noreferrer">Versjon {update.latest} er ute</a>}
             </div>
           </nav>
           <main className="main">
+            {update?.available && update.latest !== dismissed && (
+              <div className="banner update" role="status">
+                <span>
+                  <b>Versjon {update.latest} er tilgjengelig</b> (du har {update.current}).{" "}
+                  Oppdater i TrueNAS: Apps → mediacleanup → ⋮ → Update.
+                </span>
+                {update.url && <a href={update.url} target="_blank" rel="noreferrer" className="small">Hva er nytt</a>}
+                <button className="btn small" onClick={dismissUpdate}>Skjul</button>
+              </div>
+            )}
             {running && route !== "jobber" && (
               <div className="banner" role="status">
                 <span>{running.status === "queued" ? "Venter i kø" : running.message || "Kjører"}</span>

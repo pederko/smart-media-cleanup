@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.3.0
+- Appen sier fra når en ny versjon er ute: banner øverst og lenke nederst i menyen, med lenke til hva som er nytt. Sjekker GitHub-releases hver 6. time og kan slås av under Innstillinger → Oppdateringer.
+- YAML-filen bruker nå `:latest`, så TrueNAS viser «Update available» og oppdaterer med Update-knappen – uten å endre taggen.
+
 ## 0.2.2
 - Rettet: skanning av store biblioteker feilet med «database is locked». Fremdrift skrives nå i minnet i stedet for til databasen mens jobben holder en skrivetransaksjon.
 - Skanneren slipper skrivelåsen minst hvert annet sekund og under pauser, så API og planlegger ikke blokkeres.

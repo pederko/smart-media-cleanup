@@ -73,6 +73,7 @@ DEFAULTS: dict[str, Any] = {
         "hash_min_size_mb": 200,
     },
     "sync": {"interval_hours": 6},
+    "updates": {"check": True},
 }
 
 ENV_MAP = {
