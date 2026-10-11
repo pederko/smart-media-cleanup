@@ -162,7 +162,7 @@ export default function SuggestionsPage() {
                   <tr className="detail"><td colSpan={7}><SuggestionDetail id={s.id} />
                     <p style={{ marginBottom: 0, display: "flex", gap: 10, flexWrap: "wrap" }}>
                       {s.title_key && <button className="btn small" onClick={() => openTitle(s.title_key!)}>Åpne tittel</button>}
-                      {canDelete && DELETABLE.has(s.kind) && (s.radarr_id != null || s.sonarr_id != null) &&
+                      {DELETABLE.has(s.kind) && (s.radarr_id != null || s.sonarr_id != null) &&
                         <button className="btn small danger" onClick={() => setDeleting([s.id])}>{s.kind === "delete_season" ? "Slett sesongen…" : "Slett…"}</button>}
                     </p>
                   </td></tr>
@@ -188,10 +188,10 @@ export default function SuggestionsPage() {
           <div className="small muted grow">
             {selInfo && selInfo.naive_sum && selInfo.naive_sum > selInfo.freed ? `Overlapp fjernet: ${bytes(selInfo.naive_sum - selInfo.freed)}. ` : ""}
             {selInfo && selInfo.held > 0 ? `${bytes(selInfo.held)} holdes av hardlinker utenfor utvalget. ` : ""}
-            {canDelete ? "Filmer og serier i Radarr/Sonarr kan slettes herfra. Resten gjøres manuelt." : "Skrivebeskyttet: utfør slettingen i Radarr, Sonarr eller Plex, eller slå på sletting under Innstillinger."}
+            {canDelete ? "Filmer og serier i Radarr/Sonarr kan slettes herfra. Resten gjøres manuelt." : "Sletting er av – slå den på under Innstillinger → Sletting, eller slett i Radarr/Sonarr."}
           </div>
           <button className="btn" onClick={() => setSummary(true)}>Vis oppsummering</button>
-          {canDelete && <button className="btn danger" onClick={() => setDeleting(sel)}>Slett valgte…</button>}
+          <button className="btn danger" onClick={() => setDeleting(sel)}>Slett valgte…</button>
           <button className="btn" onClick={() => setSel([])}>Tøm utvalget</button>
         </div>
       )}

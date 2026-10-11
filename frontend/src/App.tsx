@@ -113,7 +113,9 @@ export default function App() {
               ))}
             </div>
             <div className="side-foot">
-              {status?.actions_enabled ? <span className="ro on">Sletting er på</span> : <span className="ro">Skrivebeskyttet</span>}
+              <a href="#/innstillinger" className="ro-link" title="Endres under Innstillinger → Sletting">
+                {status?.actions_enabled ? <span className="ro on">Sletting er på</span> : <span className="ro">Skrivebeskyttet</span>}
+              </a>
               <button className="btn small" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? "Lyst tema" : "Mørkt tema"}</button>
               <span className="faint">Versjon {status?.version ?? ""}</span>
               {update?.available && <a className="update-link" href={update.url ?? "#"} target="_blank" rel="noreferrer">Versjon {update.latest} er ute</a>}

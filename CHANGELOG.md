@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.6.1
+- Slett-knapp direkte i tittelvisningen: «Slett filmen», «Slett hele serien» og «Slett sesong N», med gevinsten på knappen.
+- Avkrysning og «Slett valgte…» vises alltid i Forslag, Filmer, Serier og på brukersidene. Er sletting av, forklarer dialogen hvor den slås på.
+- «Skrivebeskyttet / Sletting er på» nederst i menyen lenker til Innstillinger.
+
 ## 0.6.0
 - Nye sider **Filmer** og **Serier**: oppsummering øverst (hvor mye som brukes, hva som aldri er sett eller ikke sett på lenge, trygge slettinger, 4K), forslag fordelt på type, «Bør ses på først» med plakater, og en filtrer- og sorterbar liste med anbefaling per tittel.
 - Ny side **Brukere** med alle som har bedt om noe i Seerr, og en egen side per bruker: hva de har bedt om, hva de har sett selv, hva ingen har sett, og hvor mye som frigjøres ved å fjerne det de ikke har sett. Filtre for «Ikke sett av brukeren», «over 12 måneder» og «Ikke sett av noen».

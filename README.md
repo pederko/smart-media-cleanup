@@ -72,7 +72,7 @@ Forslagstyper:
 
 ### Sletting
 
-Slås på under **Innstillinger → Sletting**. Da kan du:
+Slås på under **Innstillinger → Sletting**. Slett fra tittelvisningen (knappen «Slett filmen / serien / sesong N»), eller kryss av titler i Forslag, Filmer, Serier eller på en brukerside og trykk **Slett valgte…**. Du kan slette:
 
 | Hva | Hvordan |
 |---|---|

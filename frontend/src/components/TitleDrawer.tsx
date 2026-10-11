@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import DeleteDialog from "./DeleteDialog";
 import { Suggestion } from "../api";
 import { ago, bytes, date, fileName, KIND_LABEL } from "../format";
 import { Breakdown, RiskPill, useFetch, Poster } from "./common";
@@ -17,7 +18,8 @@ type TitleDetail = {
 };
 
 export default function TitleDrawer({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data, error } = useFetch<TitleDetail>(`/api/titles/${encodeURIComponent(id)}`, [id]);
+  const [deleting, setDeleting] = useState<string[] | null>(null);
+  const { data, error, reload } = useFetch<TitleDetail>(`/api/titles/${encodeURIComponent(id)}`, [id]);
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", k);
@@ -50,6 +52,22 @@ export default function TitleDrawer({ id, onClose }: { id: string; onClose: () =
               <div className="figure"><div className="v">{ago(data.last_played)}</div><div className="l">sist sett</div></div>
               <div className="figure"><div className="v">{data.users.length}</div><div className="l">brukere har sett</div></div>
             </div>
+            {(() => {
+              const managed = data.radarr_id != null || data.sonarr_id != null;
+              const whole = data.suggestions.find((x) => x.kind === "delete_title");
+              const seasons = data.suggestions.filter((x) => x.kind === "delete_season");
+              if (data.protected || !managed || (!whole && seasons.length === 0)) return null;
+              return (
+                <div className="delete-row">
+                  {whole && <button className="btn danger" onClick={() => setDeleting([whole.id])}>
+                    {data.kind === "movie" ? "Slett filmen" : "Slett hele serien"} ({bytes(whole.savings)})…</button>}
+                  {seasons.map((x) => (
+                    <button key={x.id} className="btn small danger" onClick={() => setDeleting([x.id])}>
+                      Slett {x.label.split(" – ").pop()?.toLowerCase()} ({bytes(x.savings)})…</button>
+                  ))}
+                </div>
+              );
+            })()}
             <dl className="kv">
               <dt>Bibliotek</dt><dd>{data.library}</dd>
               <dt>Administreres av</dt><dd>{manager ? `${manager}, ${data.monitored ? "overvåket" : "ikke overvåket"}` : "Ingen (bare filsystem/Plex)"}</dd>
@@ -120,6 +138,7 @@ export default function TitleDrawer({ id, onClose }: { id: string; onClose: () =
           </>
         )}
       </aside>
+      {deleting && <DeleteDialog ids={deleting} onClose={() => setDeleting(null)} onDone={() => reload()} />}
     </>
   );
 }

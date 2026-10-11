@@ -313,3 +313,9 @@ table.compact a:hover { text-decoration: underline; text-underline-offset: 3px; 
 .title-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 @media (max-width: 560px) { .top-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; } .top-card .small { display: none; } }
+
+.delete-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 18px; }
+.ro-link { text-decoration: none; color: inherit; }
+.ro-link:hover { color: var(--text); }
+.drawer-bg + .drawer + .drawer-bg { z-index: 30; }
+.drawer-bg + .drawer + .drawer-bg + .drawer { z-index: 31; }

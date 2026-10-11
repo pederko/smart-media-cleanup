@@ -129,7 +129,8 @@ function SelectionTray({ sel, setSel, canDelete }: { sel: string[]; setSel: (f: 
         <div><div className="big">{bytes(info?.freed ?? 0)}</div><div className="small muted">frigjøres ved å slette {sel.length} valgte</div></div>
         <div className="grow" />
         <button className="btn" onClick={() => setSel(() => [])}>Tøm utvalget</button>
-        {canDelete && <button className="btn danger" onClick={() => setDeleting(true)}>Slett valgte…</button>}
+        {!canDelete && <span className="small muted">Sletting er av – slå den på under <a href="#/innstillinger">Innstillinger</a>.</span>}
+        <button className="btn danger" onClick={() => setDeleting(true)}>Slett valgte…</button>
       </div>
       {deleting && <DeleteDialog ids={sel} onClose={() => setDeleting(false)} onDone={(done) => setSel((s) => s.filter((id) => !done.includes(id)))} />}
     </>
@@ -216,7 +217,7 @@ export function LibraryPage({ kind }: { kind: "movie" | "series" }) {
         </div>
       </div>
       {data && <p className="small muted">{num(data.total)} {data.total === 1 ? one : word}, {bytes(data.total_bytes)}.</p>}
-      {data && <TitleTable rows={data.items} sort={sort} order={order} onSort={onSort} selectable={canDelete} sel={sel} setSel={setSel} />}
+      {data && <TitleTable rows={data.items} sort={sort} order={order} onSort={onSort} selectable sel={sel} setSel={setSel} />}
       {data && data.items.length === 0 && <div className="empty">Ingen {word} i dette utvalget.</div>}
       {data && data.total > data.items.length && <p><button className="btn" onClick={() => setLimit(limit + 200)}>Vis flere ({num(data.total - data.items.length)} igjen)</button></p>}
       <SelectionTray sel={sel} setSel={setSel} canDelete={canDelete} />
@@ -309,11 +310,11 @@ export function UserPage({ name }: { name: string }) {
             <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>{l}</button>
           ))}
         </div>
-        {canDelete && unwatchedDeletable.length > 0 && (
+        {unwatchedDeletable.length > 0 && (
           <button className="btn small" onClick={() => setSel((cur) => [...new Set([...cur, ...unwatchedDeletable])])}>Velg alle ikke sette her ({unwatchedDeletable.length})</button>
         )}
       </div>
-      {data && <TitleTable rows={data.items} sort={sort} order={order} onSort={onSort} selectable={canDelete} sel={sel} setSel={setSel} showRequested />}
+      {data && <TitleTable rows={data.items} sort={sort} order={order} onSort={onSort} selectable sel={sel} setSel={setSel} showRequested />}
       {data && data.items.length === 0 && <div className="empty">Ingen titler i dette utvalget.</div>}
       <SelectionTray sel={sel} setSel={setSel} canDelete={canDelete} />
     </>
