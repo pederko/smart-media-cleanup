@@ -25,7 +25,7 @@ from .analysis import engine
 from .clients.base import ServiceError
 
 log = logging.getLogger("smc.actions")
-TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+TIMEOUT = httpx.Timeout(180.0, connect=10.0)  # indekssøk i Radarr/Sonarr kan ta lang tid
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS actions(id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, suggestion_id TEXT,

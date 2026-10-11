@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import DeleteDialog from "./DeleteDialog";
+import ReleaseSearch from "./ReleaseSearch";
 import { Suggestion } from "../api";
 import { ago, bytes, date, fileName, KIND_LABEL } from "../format";
 import { Breakdown, RiskPill, useFetch, Poster } from "./common";
@@ -92,6 +93,20 @@ export default function TitleDrawer({ id, onClose }: { id: string; onClose: () =
                     })}
                   </tbody>
                 </table>
+              </section>
+            )}
+
+            {(data.radarr_id != null || data.sonarr_id != null) && (
+              <section className="section">
+                <h2>Mindre versjoner</h2>
+                <p className="small muted" style={{ marginTop: -6 }}>Søker i indekserne dine via {data.radarr_id != null ? "Radarr" : "Sonarr"} etter mindre utgaver{data.sonarr_id != null ? " av en sesong" : ""}, og anbefaler hvilke som bør velges.</p>
+                <div className="release-list">
+                  {data.radarr_id != null
+                    ? <ReleaseSearch titleKey={data.key} />
+                    : Object.keys(seasonSizes).sort((a, b) => +a - +b).map((sn) => (
+                        <ReleaseSearch key={sn} titleKey={data.key} season={+sn} label={`Sesong ${sn} (${bytes(seasonSizes[sn])})`} />
+                      ))}
+                </div>
               </section>
             )}
 

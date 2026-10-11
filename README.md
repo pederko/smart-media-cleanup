@@ -36,6 +36,8 @@ Skrivebeskyttet analyse av mediebiblioteket på TrueNAS SCALE. Appen kobler file
 - **Titler og største filer:** oppslag og sortering for 4K-remuxer, ISO-filer og store episoder.
 - **Filmer og Serier:** egne sider med oppsummering øverst – hva som aldri er sett, ikke sett på lenge, trygge slettinger – og en liste som kan filtreres og sorteres på størrelse, seing, anbefaling og gevinst.
 - **Brukere (Seerr):** hvem som ba om hva, og om de har sett det selv. Egen side per bruker med oppsummering og filter for det de ikke har sett.
+- **Nedlastinger:** hva som ligger i nedlastingsmappen, om det er importert til biblioteket, og hva som trygt kan slettes.
+- **Finn mindre versjon:** søk i indekserne via Radarr/Sonarr etter mindre utgaver av store filmer og sesonger, med anbefaling.
 - **Sletting (valgfritt):** filmer, serier og enkeltsesonger slettes via Radarr/Sonarr etter en oppsummering. Av som standard.
 
 Forslagstyper:

@@ -325,3 +325,11 @@ table.compact a:hover { text-decoration: underline; text-underline-offset: 3px; 
 .dupe.checked { border-color: var(--accent); }
 .dupe tr.keep td { color: var(--text); }
 .dupe tr:not(.keep) td:nth-child(2) { color: var(--muted); }
+
+.cap-seg { display: block; cursor: pointer; }
+.cap-seg:hover { filter: brightness(1.12); }
+.cap-key { color: inherit; text-decoration: none; }
+.cap-key:hover b { text-decoration: underline; text-underline-offset: 3px; }
+.release-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.release-box { flex-basis: 100%; }
+tr.rec td { background: color-mix(in srgb, var(--risk-lav) 7%, transparent); }

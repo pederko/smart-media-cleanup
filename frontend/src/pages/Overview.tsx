@@ -168,16 +168,16 @@ function Capacity({ data }: { data: Overview }) {
         {data.libraries.map((l, i) => {
           const share = Math.min(l.alloc, byLib[l.library] ?? 0);
           return (
-            <div key={l.library} className="cap-seg" style={{ width: pct(l.alloc), background: libColor(l.library, i) }} title={`${l.library}: ${bytes(l.alloc)}${share ? `, ${bytes(share)} kan frigjøres` : ""}`}>
+            <a key={l.library} href={libHref(l.kind)} className="cap-seg" style={{ width: pct(l.alloc), background: libColor(l.library, i) }} title={`${l.library}: ${bytes(l.alloc)}${share ? `, ${bytes(share)} kan frigjøres` : ""}. Klikk for detaljer.`}>
               {share > 0 && <div className="reclaim" style={{ width: `${(share / l.alloc) * 100}%` }} />}
-            </div>
+            </a>
           );
         })}
         {other > 0 && <div className="cap-seg" style={{ width: pct(other), background: "var(--lib-other)" }} title={`Annet: ${bytes(other)}`} />}
       </div>
       <div className="cap-legend">
         {data.libraries.map((l, i) => (
-          <span key={l.library}><i className="k" style={{ background: libColor(l.library, i) }} /><b>{l.library}</b> {bytes(l.alloc)}{l.protected ? <span className="faint"> (beskyttet)</span> : null}</span>
+          <a key={l.library} href={libHref(l.kind)} className="cap-key"><i className="k" style={{ background: libColor(l.library, i) }} /><b>{l.library}</b> {bytes(l.alloc)}{l.protected ? <span className="faint"> (beskyttet)</span> : null}</a>
         ))}
         {other > 0 && <span><i className="k" style={{ background: "var(--lib-other)" }} /><b>Annet</b> {bytes(other)}</span>}
         <span><i className="k hatch" />Kan frigjøres {bytes(reclaimTotal)}</span>
@@ -190,6 +190,10 @@ function Capacity({ data }: { data: Overview }) {
       </p>
     </section>
   );
+}
+
+function libHref(kind: string) {
+  return kind === "movies" ? "#/filmer" : kind === "series" ? "#/serier" : kind === "downloads" ? "#/nedlastinger" : "#/titler";
 }
 
 function Fig({ v, l }: { v: string; l: string }) {

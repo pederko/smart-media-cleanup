@@ -225,6 +225,7 @@ def r_cover(mid: int, name: str, x_api_key: str = Header(None)):
 
 # ---- skrivende kall (sletting) – registreres i WRITES ----
 WRITES: list = []
+RELEASE_CALLS: list = []
 DELETED: set = set()
 PATH_OVERRIDE: dict = {}
 
@@ -282,6 +283,38 @@ def s_episodefile_delete(fid: int, x_api_key: str = Header(None)):
     _check(x_api_key)
     WRITES.append(("DELETE", f"/sonarr/api/v3/episodefile/{fid}", {}, None))
     return {}
+
+
+def _rel(title, size_gb, res, seeders, protocol="torrent", rejections=(), full_season=None, cf=0):
+    return {"title": title, "size": int(size_gb * GB), "quality": {"quality": {"name": f"WEBDL-{res}p", "resolution": res}},
+            "indexer": "TestIndexer", "protocol": protocol, "seeders": seeders, "leechers": 1, "age": 100,
+            "languages": [{"name": "English"}], "rejected": bool(rejections), "rejections": list(rejections),
+            "customFormatScore": cf, "fullSeason": full_season, "guid": title, "indexerId": 1}
+
+
+@app.get("/radarr/api/v3/release")
+def r_release(movieId: int, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    RELEASE_CALLS.append(movieId)
+    up = ["Existing file on disk is of equal or higher preference: Remux-2160p"]
+    return [
+        _rel("Big.Movie.2010.2160p.REMUX", 82, 2160, 50),                      # større – filtreres bort
+        _rel("Big.Movie.2010.1080p.BluRay.x264", 14, 1080, 40, rejections=up),  # anbefalt
+        _rel("Big.Movie.2010.1080p.WEB.x265", 6, 1080, 0, rejections=up),       # ingen delere
+        _rel("Big.Movie.2010.2160p.WEB.HEVC", 25, 2160, 12, rejections=up),
+        _rel("Big.Movie.2010.720p.HDTV", 3, 720, 3, rejections=up + ["Release is banned"]),
+        _rel("Big.Movie.2010.1080p.NZB", 10, 1080, None, protocol="usenet", rejections=up),
+    ]
+
+
+@app.get("/sonarr/api/v3/release")
+def s_release(seriesId: int, seasonNumber: int, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    return [
+        _rel("Hot.Show.S01.1080p.WEB.x265", 4, 1080, 30, full_season=True),
+        _rel("Hot.Show.S01E01.1080p", 2, 1080, 30, full_season=False),
+        _rel("Hot.Show.S01.2160p.REMUX", 40, 2160, 30, full_season=True),
+    ]
 
 
 def _series_obj(sid):

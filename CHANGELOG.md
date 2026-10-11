@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.8.0
+- Ny side **Nedlastinger** (f.eks. tmp): hva som ligger der, om det er importert (kopi eller hardlenke i biblioteket) eller ikke, alder, og anbefaling (kan slettes / vurder / behold). Slett mapper og filer herfra (samme bryter og skrivetilgang som duplikater).
+- Bibliotekene i kapasitetsstolpen på oversikten er klikkbare: FILM → Filmer, TV → Serier, tmp → Nedlastinger.
+- **Finn mindre versjon** i tittelvisningen: søker i indekserne dine via Radarr (film) eller Sonarr (sesongpakker), viser bare utgivelser som er minst 15 % mindre, og anbefaler de beste ut fra gevinst, 1080p, målstørrelse, delere og avvisninger. Resultatene caches i 30 minutter. Bytte gjøres foreløpig i Radarr/Sonarr.
+
 ## 0.7.2
 - Duplikater der filen Radarr/Sonarr kjenner skal fjernes: slettes nå via Radarr/Sonarr (moviefile/episodefile), som deretter skanner mappen på nytt og tar i bruk filen du beholder. Ingen ny nedlasting. Krever at filen som beholdes ligger i samme film-/seriemappe.
 

@@ -325,6 +325,43 @@ def test_requester_page(client):
     assert anna["summary"]["unwatched_delete"]["count"] == 0  # beskyttet tas ikke med
 
 
+def test_find_smaller_movie_versions(client):
+    r = client.get(f"/api/releases/{_title('Big Movie')['key']}").json()
+    assert r["service"] == "radarr" and r["current_size"] == 80 * GB and r["total"] == 6
+    names = [x["title"] for x in r["releases"]]
+    assert "Big.Movie.2010.2160p.REMUX" not in names                # ikke mindre
+    top = r["releases"][0]
+    assert top["title"] == "Big.Movie.2010.1080p.BluRay.x264" and top["recommended"]
+    assert any("mindre" in x for x in top["reasons"])
+    zero = next(x for x in r["releases"] if x["title"].endswith("WEB.x265"))
+    assert not zero["recommended"] and "Ingen delere" in zero["warnings"]
+    banned = next(x for x in r["releases"] if "HDTV" in x["title"])
+    assert "Release is banned" in banned["warnings"]
+    assert not any("preference" in w for x in r["releases"] for w in x["warnings"])  # forventet avvisning skjules
+    # Andre gang fra cache – ingen nytt søk mot indekserne
+    n = len(ms.RELEASE_CALLS)
+    assert client.get(f"/api/releases/{_title('Big Movie')['key']}").json()["cached"] is True
+    assert len(ms.RELEASE_CALLS) == n
+
+
+def test_find_smaller_season_pack(client):
+    key = _title("Hot Show")["key"]
+    assert client.get(f"/api/releases/{key}").status_code == 400      # sesong må velges
+    r = client.get(f"/api/releases/{key}", params={"season": 1}).json()
+    assert r["episode_releases"] == 1 and [x["title"] for x in r["releases"]] == ["Hot.Show.S01.1080p.WEB.x265"]
+    assert r["episodes"] == 2
+
+
+def test_downloads_overview(client):
+    r = client.get("/api/downloads").json()
+    by = {i["name"]: i for i in r["items"]}
+    assert by["Hardlinked.2011.mkv"]["status"] == "hardlenket" and by["Hardlinked.2011.mkv"]["freed"] == 0
+    assert by["Copy.2013.mkv"]["status"] == "kopiert" and by["Copy.2013.mkv"]["title_name"] == "Copy"
+    old = by["Old.Download"]
+    assert old["status"] == "ikke_importert" and old["advice"] == "vurder" and old["is_dir"]
+    assert r["summary"]["count"] == 3
+
+
 # ------------------------------------------------------------------ sletting (kjøres sist)
 
 def _sid(name, kind, scope=None):
@@ -542,3 +579,17 @@ def test_duplicate_protection_setting(monkeypatch):
     assert dupes.protection_applies() is True
     r = dupes._check_file({"path": "/mnt/pool1/Barn/a.mkv"}, {"size": 1, "mtime": 0, "inode": 1}, set(), True)
     assert "beskyttet" in r
+
+
+
+def test_downloads_delete_folder(client, no_refresh):
+    import os
+    _enable_files(client)
+    path = "/mnt/pool1/tmp/Old.Download"
+    p = client.post("/api/downloads/plan", json={"paths": [path, "/mnt/pool1/FILM/Big Movie (2010)"]}).json()
+    assert p["count"] == 1 and p["items"][1]["ok"] is False
+    r = client.post("/api/downloads/execute", json={"paths": [path, "/mnt/pool1/FILM/Big Movie (2010)"], "token": p["token"]}).json()
+    assert r["done"] == 1
+    root = _media_root()
+    assert not os.path.exists(f"{root}/tmp/Old.Download")
+    assert os.path.exists(f"{root}/FILM/Big Movie (2010)")
