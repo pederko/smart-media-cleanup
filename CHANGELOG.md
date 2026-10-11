@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.13.0
+- Ny side **Bytt kvalitet**: alle filmer og sesonger over grensen (justerbar på siden), med nåværende størrelse, seing, anbefalt mindre utgivelse og gevinst. Filtrer på filmer/serier og «aldri sett», sorter på gevinst, størrelse eller sist sett.
+- Kryss av mange og «Søk etter valgte»: søker én og én (maks 25 per runde) med fremdrift og stoppknapp. Resultatene lagres og vises i listen.
+- «Bytt N…» starter mange bytter med én bekreftelse – med samlet gevinst, hvor mye som lastes ned først, og valg for hva som skjer etterpå. Status per tittel følges i listen.
+
 ## 0.12.0
 - «Annet» i kapasitetsstolpen er klikkbar: ny side som viser hvilke datasett (apper, appdata, opptak, rotdatasettet) og snapshots som bruker plassen utenfor bibliotekene, med råd om hvor det ryddes. Bare visning – appen har med vilje ikke tilgang til disse mappene.
 

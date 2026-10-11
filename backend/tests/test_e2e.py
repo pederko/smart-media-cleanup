@@ -402,6 +402,31 @@ def test_swap_download_first_then_replace(client):
         ms.WRITES.clear()
 
 
+def test_quality_overview_and_batch_swap(client):
+    r = client.get("/api/quality").json()
+    big = next(i for i in r["items"] if i["name"] == "Big Movie")
+    assert big["season"] is None and big["size"] == 80 * GB and big["estimate"] == 68 * GB
+    assert not any(i["name"] == "Popular" for i in r["items"])          # under grensen
+    assert all(i["name"] != "Big Movie" for i in client.get("/api/quality", params={"min_movie_gb": 100}).json()["items"])
+    client.get(f"/api/releases/{big['key']}")                              # fyller cachen
+    big = next(i for i in client.get("/api/quality").json()["items"] if i["name"] == "Big Movie")
+    rel = big["search"]["release"]
+    assert rel["title"] == "Big.Movie.2010.1080p.BluRay.x264"
+    item = {"key": big["key"], "guid": rel["guid"], "indexer_id": rel["indexer_id"]}
+    _enable_actions(client, False)
+    assert client.post("/api/swaps/batch", json={"items": [item]}).status_code == 403
+    _enable_actions(client, True)
+    try:
+        res = client.post("/api/swaps/batch", json={"items": [item, {**item, "key": "movie:r:999"}], "after_swap": "unmonitor"}).json()
+        assert res["started"] == 1 and res["failed"] == 1
+        big = next(i for i in client.get("/api/quality").json()["items"] if i["name"] == "Big Movie")
+        assert big["swap"]["state"] == "venter"
+        client.post(f"/api/swaps/{big['swap']['id']}/cancel")
+    finally:
+        _enable_actions(client, False)
+        ms.WRITES.clear()
+
+
 def _enable_actions(client, on):
     st = client.get("/api/settings").json()
     st["actions"] = {**st.get("actions", {}), "enabled": on}

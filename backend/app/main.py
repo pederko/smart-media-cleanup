@@ -17,10 +17,10 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import actions, db, downloads, dupes, jobs, plexcheck, posters, releases, settings, swaps, sync, updates, views
+from . import actions, db, downloads, dupes, jobs, plexcheck, posters, quality, releases, settings, swaps, sync, updates, views
 from .analysis import engine
 
-VERSION = os.environ.get("SMC_VERSION", "0.12.0")
+VERSION = os.environ.get("SMC_VERSION", "0.13.0")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -594,6 +594,29 @@ def plex_check_remove_execute(req: KeysRequest):
         raise HTTPException(409, str(e))
     except actions.ActionError as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/api/quality")
+def quality_candidates(kind: str = "", min_movie_gb: float | None = None, min_episode_gb: float | None = None,
+                       q: str = "", unwatched: bool = False, sort: str = "savings"):
+    return quality.candidates(kind, min_movie_gb, min_episode_gb, q, unwatched, sort)
+
+
+class SwapBatchItem(BaseModel):
+    key: str
+    season: int | None = None
+    guid: str
+    indexer_id: int
+
+
+class SwapBatch(BaseModel):
+    items: list[SwapBatchItem]
+    after_swap: str = "none"
+
+
+@app.post("/api/swaps/batch")
+def swaps_batch(req: SwapBatch):
+    return _swap_call(quality.start_many, [i.model_dump() for i in req.items], req.after_swap)
 
 
 @app.get("/api/other-storage")

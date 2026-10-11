@@ -9,6 +9,7 @@ import DuplicatesPage from "./pages/Duplicates";
 import DownloadsPage from "./pages/Downloads";
 import PlexCheckPage from "./pages/PlexCheck";
 import OtherPage from "./pages/Other";
+import QualityPage from "./pages/Quality";
 import SettingsPage, { JobsPage, LogPage } from "./pages/Settings";
 import { LibraryPage, UserPage, UsersPage } from "./pages/Library";
 
@@ -17,6 +18,7 @@ const ROUTES: { id: string; label: string }[] = [
   { id: "forslag", label: "Forslag" },
   { id: "filmer", label: "Filmer" },
   { id: "serier", label: "Serier" },
+  { id: "kvalitet", label: "Bytt kvalitet" },
   { id: "brukere", label: "Brukere" },
   { id: "titler", label: "Titler" },
   { id: "duplikater", label: "Duplikater" },
@@ -93,6 +95,7 @@ export default function App() {
     case "nedlastinger": page = <DownloadsPage />; break;
     case "plex": page = <PlexCheckPage />; break;
     case "annet": page = <OtherPage />; break;
+    case "kvalitet": page = <QualityPage />; break;
     case "filmer": page = <LibraryPage kind="movie" />; break;
     case "serier": page = <LibraryPage kind="series" />; break;
     case "brukere": page = param ? <UserPage name={param} /> : <UsersPage />; break;

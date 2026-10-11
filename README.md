@@ -43,6 +43,7 @@ Ingenting slettes uten en oppsummering og ett bekreftende klikk, og alt loggfør
 - **Brukere (Seerr):** hvem som ba om hva, og om de har sett det selv. Egen side per bruker med oppsummering og filter for det de ikke har sett.
 - **Plex-avvik:** filer på disk som ikke er i Plex (med sannsynlig årsak: ikke i noe Plex-bibliotek, diskbilde, nylig lagt til, ikke funnet av Plex), og Plex-oppføringer som mangler på disk. «Be Plex skanne» starter en delvis skanning av akkurat den mappen. Mapper som bare ligger på disk kan slettes, og Plex-oppføringer uten filer kan fjernes fra Plex.
 - **Nedlastinger:** klikk `tmp` i kapasitetsstolpen. Viser hva som ligger i nedlastingsmappen, om det er importert (hardlenket eller kopiert til biblioteket), og anbefaling: kan slettes, vurder eller behold. Alt som er endret de siste 14 dagene beholdes.
+- **Bytt kvalitet:** egen side med alle store filmer og sesonger (over justerbare grenser). Søk i indekserne for mange om gangen (25 per runde, én etter én for å skåne indekserne), se anbefalt utgivelse og gevinst per tittel, kryss av og bytt mange med én bekreftelse.
 - **Finn mindre versjon og bytt:** søk i indekserne via Radarr (film) eller Sonarr (sesongpakker) etter mindre utgaver, med anbefaling. «Bytt» laster ned den nye først og bytter etterpå. Se [Bytte til mindre versjon](#bytte-til-mindre-versjon).
 - **Sletting (valgfritt):** filmer, serier og enkeltsesonger via Radarr/Sonarr, og duplikater og nedlastinger direkte på disk. Av som standard.
 - **Logg:** alt som er slettet fra appen, med resultat og frigjort plass.
@@ -127,6 +128,8 @@ Under Plex-avvik → «I Plex, mangler på disk» kan du krysse av og velge **Fj
 ### Bytte til mindre versjon
 
 Åpne en film eller serie og trykk **Finn mindre versjon** (for serier: per sesong). Appen ber Radarr/Sonarr søke i indekserne og viser bare utgivelser som er minst 15 % mindre enn i dag. «Anbefalt» veier gevinst, 1080p, størrelse nær målet, antall delere og eventuelle avvisninger fra Radarr/Sonarr. For serier brukes bare hele sesongpakker. Søket caches i 30 minutter for å skåne indekserne.
+
+For mange titler om gangen: bruk siden **Bytt kvalitet**. Velg titler, trykk «Søk etter valgte», og deretter «Bytt N…». Oppsummeringen viser hver utgivelse, samlet gevinst og hvor mye som må lastes ned først. Hvert bytte går gjennom de samme sperrene som under.
 
 **Bytt** (krever bryteren for sletting via Radarr/Sonarr) viser hva som skjer og spør hva som skal skje etterpå. Etter ett klikk på **Bekreft**:
 
