@@ -88,7 +88,7 @@ Er repoet offentlig, kan TrueNAS hente imaget uten innlogging. Er det privat, m�
 Trenger du ikke GitHub, kan du bygge på TrueNAS og bruke `image: smart-media-cleanup:0.2.0` med `pull_policy: never` i YAML:
 
 ```sh
-git clone https://github.com/<github-bruker>/smart-media-cleanup.git /mnt/pool1/apps/mediacleanup/src
+git clone https://github.com/pederko/smart-media-cleanup.git /mnt/pool1/apps/mediacleanup/src
 docker build -t smart-media-cleanup:0.2.0 /mnt/pool1/apps/mediacleanup/src
 ```
 
@@ -96,7 +96,7 @@ docker build -t smart-media-cleanup:0.2.0 /mnt/pool1/apps/mediacleanup/src
 
 1. Apps → Discover Apps → pilen ved **Custom App** → **Install via YAML**.
 2. Navn: `mediacleanup`.
-3. Lim inn innholdet i [`deploy/truenas-app.yaml`](deploy/truenas-app.yaml) og bytt `<github-bruker>` med ditt brukernavn (små bokstaver).
+3. Lim inn innholdet i [`deploy/truenas-app.yaml`](deploy/truenas-app.yaml).
 4. Lagre. TrueNAS henter imaget, og appen starter på **http://<truenas-ip>:30480**.
 
 ### 5. Legg til i Homarr (valgfritt)
@@ -207,7 +207,7 @@ Bare én jobb kjører om gangen. Inkrementell skanning leser bare filinformasjon
 2. Apps → mediacleanup → **Edit**, endre taggen i `image:` (f.eks. `0.2.0` → `0.3.0`) og lagre. TrueNAS henter det nye imaget og starter appen på nytt.
 3. Databasen oppgraderes automatisk ved oppstart. Innstillinger og backup i `data/` beholdes.
 
-Gå tilbake ved å sette forrige tagg. Bruker du `:latest` i stedet for en fast versjon, hentes ny versjon når appen installeres på nytt eller imaget hentes manuelt (`docker pull ghcr.io/<github-bruker>/smart-media-cleanup:latest` og så omstart). Fast tagg gir mest kontroll over når oppdateringer skjer.
+Gå tilbake ved å sette forrige tagg. Bruker du `:latest` i stedet for en fast versjon, hentes ny versjon når appen installeres på nytt eller imaget hentes manuelt (`docker pull ghcr.io/pederko/smart-media-cleanup:latest` og så omstart). Fast tagg gir mest kontroll over når oppdateringer skjer.
 
 ### Utgivelser (for utvikling)
 

@@ -3,14 +3,14 @@
 #
 # Forutsetter at /mnt/pool1/apps/mediacleanup/data finnes og eies av 568:568.
 # Imaget hentes fra GitHub Container Registry (bygges automatisk av GitHub Actions).
-# Bytt <github-bruker> med ditt GitHub-brukernavn (små bokstaver).
+
 #
 # Alle mediemapper monteres skrivebeskyttet (:ro). Appen kan ikke slette eller endre filer.
 
 services:
   mediacleanup:
     # Fast versjon: oppdater ved å endre taggen. Alternativ: :latest (siste utgivelse) eller :edge (siste fra main).
-    image: ghcr.io/<github-bruker>/smart-media-cleanup:0.2.0
+    image: ghcr.io/pederko/smart-media-cleanup:0.2.0
     restart: unless-stopped
     user: "568:568"
     ports:
