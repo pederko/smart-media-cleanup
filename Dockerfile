@@ -8,7 +8,7 @@ RUN npm run build
 
 # ---------- 2) Kjøretid ----------
 FROM python:3.12-slim
-ARG APP_VERSION=0.2.0
+ARG APP_VERSION=0.2.1
 LABEL org.opencontainers.image.title="smart-media-cleanup" \
       org.opencontainers.image.description="Skrivebeskyttet analyse av mediebibliotek på TrueNAS SCALE"
 

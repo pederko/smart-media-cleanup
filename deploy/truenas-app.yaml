@@ -16,11 +16,23 @@
 # Alle mediemapper monteres skrivebeskyttet (:ro). Appen kan ikke slette eller endre filer.
 # Adresser og nøkler til Radarr/Sonarr/Plex/Tautulli/Seerr legges inn i appen etterpå
 # (Innstillinger), eller som miljøvariabler under «environment» nedenfor.
+#
+# WEB UI-KNAPP: x-portals gir knappen «Web UI» i Apps-oversikten. TrueNAS leser den
+# bare ved installasjon – har du allerede installert appen uten den, må appen slettes og
+# installeres på nytt (data i /mnt/pool1/apps/mediacleanup/data beholdes).
+# Åpner knappen 0.0.0.0, bytt host med TrueNAS-maskinens IP-adresse.
+
+x-portals:
+  - name: Web UI
+    scheme: http
+    host: 0.0.0.0
+    port: 30480
+    path: /
 
 services:
   mediacleanup:
     # Fast versjon: oppdater ved å endre taggen. Alternativ: :latest (siste utgivelse) eller :edge (siste fra main).
-    image: ghcr.io/pederko/smart-media-cleanup:0.2.0
+    image: ghcr.io/pederko/smart-media-cleanup:0.2.1
     restart: unless-stopped
     user: "568:568"
     ports:

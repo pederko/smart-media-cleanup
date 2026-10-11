@@ -4,6 +4,10 @@ Skrivebeskyttet analyse av mediebiblioteket på TrueNAS SCALE. Appen kobler file
 
 **Appen sletter ingenting.** Mediemappene monteres `:ro`, og appen gjør bare lesende API-kall. Selve slettingen gjør du i Radarr, Sonarr eller Plex.
 
+![Oversikt](docs/screenshots/oversikt.png)
+
+<sub>Skjermbildene viser testdata fra den automatiske testen, ikke et ekte bibliotek.</sub>
+
 ---
 
 ## Innhold
@@ -43,6 +47,14 @@ Forslagstyper:
 | Identisk kopi | Samme størrelse + delvis hash, ulik inode | Kopien(e) som ikke beholdes |
 | Gammel nedlasting | Mappe i `tmp` uten kopi i biblioteket, eldre enn en måned | Mappen |
 
+### Skjermbilder
+
+| Forslag med forklaring og utvalg | Tittel med sesonger og forespørsler |
+|---|---|
+| ![Forslag](docs/screenshots/forslag.png) | ![Tittel](docs/screenshots/tittel.png) |
+
+<img src="docs/screenshots/mobil.png" alt="Mobil" width="300">
+
 ## Sikkerhetsmodell
 
 | Tiltak | Hvordan |
@@ -77,7 +89,7 @@ Kildekoden ligger på [github.com/pederko/smart-media-cleanup](https://github.co
 
 | Tagg | Innhold |
 |---|---|
-| `0.2.0`, `0.2` | En bestemt utgivelse (anbefalt i YAML) |
+| `0.2.1`, `0.2` | En bestemt utgivelse (anbefalt i YAML) |
 | `latest` | Siste utgivelse |
 | `edge` | Siste commit på `main` (kan være uferdig) |
 
@@ -108,7 +120,7 @@ Bruk **Install via YAML**, ikke skjemaet «Install iX App» (det med felter for 
 |---|---|---|
 | Application name | Name | `mediacleanup` |
 | Image Configuration | Repository | `ghcr.io/pederko/smart-media-cleanup` |
-| | Tag | `0.2.0` |
+| | Tag | `0.2.1` |
 | Container Configuration | Timezone | `Europe/Oslo` |
 | Security Context | Privileged | av |
 | | Custom User | på, User ID `568`, Group ID `568` |
@@ -123,7 +135,20 @@ Bruk **Install via YAML**, ikke skjemaet «Install iX App» (det med felter for 
 Resten kan stå som standard. YAML-veien gir i tillegg skrivebeskyttet rotfilsystem og fjernede Linux-capabilities.
 </details>
 
-### 5. Legg til i Homarr (valgfritt)
+### 5. Ikon i TrueNAS (valgfritt)
+
+TrueNAS har ikke noe felt for ikon på egne YAML-apper, så appen vises med standardikonet. Ikonet kan settes i appens metadatafil med et lite skript (lager sikkerhetskopi først):
+
+```sh
+curl -fsSLo /tmp/set-icon.sh https://raw.githubusercontent.com/pederko/smart-media-cleanup/main/deploy/set-truenas-icon.sh
+sh /tmp/set-icon.sh mediacleanup
+```
+
+Last Apps-siden på nytt. Ikonet kan bli tilbakestilt når appen redigeres (Edit) – kjør i så fall skriptet igjen. Det påvirker bare visningen i TrueNAS.
+
+**Om versjonsnummeret i TrueNAS:** «App Version: custom» og «Version: 1.0.0» under Application Info gjelder TrueNAS sin innpakning av egne apper, ikke Smart Media Cleanup. Appens egen versjon står nederst i menyen i appen og i image-taggen (`…:0.2.1`).
+
+### 6. Legg til i Homarr (valgfritt)
 
 Lag en app-tile i Homarr med adressen `http://<truenas-ip>:30480`. Ingen integrasjon utover lenken trengs.
 

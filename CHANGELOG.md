@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.2.1
+- Appikon (også som ikon i nettleserfanen) og skript som setter ikonet i TrueNAS Apps.
+- «Web UI»-knapp i TrueNAS via `x-portals` i YAML-filen.
+- Skjermbilder i README og tydeligere installasjonsinstruks.
+
 ## 0.2.0
 - Seerr: viser hvem som ba om hver film/serie i forslag, titler og tittelvisning.
 - Filter «Etterspurt av» i forslag og titler, og oversikt per bruker (antall titler, plass, hvor mye de ikke har sett selv).
