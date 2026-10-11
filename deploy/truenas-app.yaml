@@ -61,7 +61,7 @@ services:
       # fra appen: fjern :ro på mappene det gjelder, og slå det på under Innstillinger → Sletting.
       - /mnt/pool1/FILM:/media/FILM:ro
       - /mnt/pool1/TV:/media/TV:ro
-      - /mnt/pool1/Barn:/media/Barn:ro
+      - /mnt/pool1/Barn:/media/Barn:ro   # fjern :ro for å kunne rydde duplikater i Barn
       - /mnt/pool1/tmp:/media/tmp:ro
     read_only: true
     tmpfs:

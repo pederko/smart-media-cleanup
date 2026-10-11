@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from . import actions, db, dupes, jobs, posters, settings, sync, updates, views
 from .analysis import engine
 
-VERSION = os.environ.get("SMC_VERSION", "0.7.0")
+VERSION = os.environ.get("SMC_VERSION", "0.7.1")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")

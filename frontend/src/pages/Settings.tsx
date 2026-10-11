@@ -11,7 +11,7 @@ type S = {
   path_mappings: { from: string; to: string }[];
   analysis: Record<string, number | number[]>;
   weights: Record<string, number>;
-  protection: { tags: string[]; plex_labels: string[]; paths: string[] };
+  protection: { tags: string[]; plex_labels: string[]; paths: string[]; include_duplicates?: boolean };
   scanner: Record<string, number>;
   sync: { interval_hours: number };
   updates?: { check: boolean };
@@ -152,7 +152,12 @@ export default function SettingsPage() {
           <label className="field"><span>Etiketter i Plex</span><input type="text" value={s.protection.plex_labels.join(", ")} onChange={(e) => setS({ ...s, protection: { ...s.protection, plex_labels: list(e.target.value) } })} /></label>
           <label className="field"><span>Beskyttede stier på TrueNAS</span><input type="text" placeholder="/mnt/pool1/FILM/Samling" value={s.protection.paths.join(", ")} onChange={(e) => setS({ ...s, protection: { ...s.protection, paths: list(e.target.value) } })} /></label>
         </div>
-      </section>
+              <label className="check" style={{ marginTop: 14 }}>
+          <input type="checkbox" checked={!!s.protection.include_duplicates} onChange={(e) => setS({ ...s, protection: { ...s.protection, include_duplicates: e.target.checked } })} />
+          Beskyttelse gjelder også duplikater og ekstra versjoner
+        </label>
+        <p className="small muted" style={{ margin: "4px 0 0", maxWidth: 720 }}>Av som standard: ekstra kopier og versjoner kan ryddes også i beskyttede biblioteker og titler, fordi én fil alltid blir igjen. Beskyttelsen mot å slette hele titler gjelder uansett.</p>
+</section>
 
       <section className="section">
         <h2>Terskler</h2>

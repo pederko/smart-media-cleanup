@@ -427,6 +427,9 @@ def make_suggestions(m: Model, s: dict, dups: list[DupGroup]) -> list[Suggestion
 
 
 def _is_protected(f: FileRec, m: Model) -> bool:
+    """Gjelder bare duplikatforslag: beskyttelse teller kun hvis den er slått på for duplikater."""
+    if not settings.get()["protection"].get("include_duplicates", False):
+        return False
     if m.libs.get(f.library, {}).get("protected"):
         return True
     t = m.titles.get(f.title_key) if f.title_key else None

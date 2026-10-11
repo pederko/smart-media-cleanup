@@ -1,5 +1,8 @@
 # Endringslogg
 
+## 0.7.1
+- Beskyttelse (som Barn-biblioteket og «keep»-tagger) hindrer ikke lenger opprydding i duplikater og ekstra versjoner – én fil blir alltid igjen. Kan slås på igjen under Innstillinger → Beskyttelse. Beskyttelsen mot å slette hele titler gjelder som før.
+
 ## 0.7.0
 - Ny duplikatside: oppsummering øverst, faner per type med antall, søk, filter for kopier i nedlastingsmappen og sortering etter gevinst.
 - Velg hvilken fil som beholdes med ett klikk per gruppe, kryss av grupper og slett overflødige filer etter en oppsummering.

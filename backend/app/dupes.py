@@ -83,6 +83,8 @@ def _load_groups(c) -> list[dict]:
             f["in_downloads"] = libs.get(fi.get("library"), {}).get("kind") == "downloads"
             f["missing"] = not fi
         g["in_downloads"] = any(f["in_downloads"] for f in g["files"])
+        lib_prot = any(libs.get(f.get("library"), {}).get("protected") for f in g["files"])
+        g["protected"] = 1 if (protection_applies() and (g["protected"] or lib_prot)) else 0
         g["libraries"] = sorted({f["library"] for f in g["files"] if f.get("library")})
     return groups
 
@@ -121,6 +123,11 @@ def overview(kind: str = "", q: str = "", library: str = "", where: str = "", so
 
 # ------------------------------------------------------------------ sletting
 
+def protection_applies() -> bool:
+    """Gjelder beskyttelse (bibliotek, tagger, etiketter) også duplikater? Standard: nei."""
+    return bool(settings.get()["protection"].get("include_duplicates", False))
+
+
 def _check_file(f: dict, fi: dict | None, managed: set[str], protected: bool) -> str | None:
     """Returnerer grunn til at filen IKKE kan slettes, eller None."""
     if fi is None:
@@ -132,7 +139,7 @@ def _check_file(f: dict, fi: dict | None, managed: set[str], protected: bool) ->
     cpath, lib = _container_path(f["path"])
     if not cpath or not lib:
         return "Ligger utenfor bibliotekene"
-    if lib.get("protected"):
+    if lib.get("protected") and protection_applies():
         return f"Biblioteket {lib['name']} er beskyttet"
     root = os.path.realpath(lib["container_path"])
     if not os.path.realpath(cpath).startswith(root + os.sep):
@@ -190,7 +197,7 @@ def plan(choices: list[dict]) -> dict:
                 fr = file_rows.get(f["path"], {})
                 if f["path"] == keep or (fr and fr.get("inode") == kr.get("inode") and fr.get("dev") == kr.get("dev")):
                     continue  # samme fil som den som beholdes (hardlink)
-                reason = _check_file(f, file_rows.get(f["path"]), managed, bool(g["protected"]))
+                reason = _check_file(f, file_rows.get(f["path"]), managed, bool(g["protected"]) and protection_applies())
                 to_delete.append({"path": f["path"], "size": f["size"], "alloc": f.get("alloc"),
                                   "ok": reason is None, "reason": reason, "managed": f["managed"],
                                   "in_downloads": f["in_downloads"]})

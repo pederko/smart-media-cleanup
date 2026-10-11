@@ -65,6 +65,9 @@ DEFAULTS: dict[str, Any] = {
         "tags": ["keep", "behold"],
         "plex_labels": ["keep", "behold"],
         "paths": [],
+        # Skal beskyttelse også hindre opprydding i duplikater? Av som standard: én fil blir
+        # alltid igjen, så innholdet beholdes uansett.
+        "include_duplicates": False,
     },
     "scanner": {
         "interval_hours": 24,

@@ -501,3 +501,20 @@ def test_duplicate_delete_refuses_changed_file(client, no_refresh):
     else:
         assert r.status_code == 409
     assert os.path.exists(extra)
+
+
+
+def test_duplicate_protection_setting(monkeypatch):
+    from app import dupes
+    lib = {"name": "Barn", "host_path": "/mnt/pool1/Barn", "container_path": "/x", "protected": True}
+    s = settings.get()
+    s["protection"]["include_duplicates"] = False
+    monkeypatch.setattr(settings, "get", lambda: s)
+    assert dupes.protection_applies() is False
+    # Med beskyttelse av for duplikater stopper ikke beskyttet tittel/bibliotek sjekken
+    r = dupes._check_file({"path": "/mnt/pool1/Barn/a.mkv"}, {"size": 1, "mtime": 0, "inode": 1}, set(), False)
+    assert r is None or "beskyttet" not in r
+    s["protection"]["include_duplicates"] = True
+    assert dupes.protection_applies() is True
+    r = dupes._check_file({"path": "/mnt/pool1/Barn/a.mkv"}, {"size": 1, "mtime": 0, "inode": 1}, set(), True)
+    assert "beskyttet" in r
