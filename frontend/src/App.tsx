@@ -13,6 +13,7 @@ import OverviewPage from "./pages/Overview";
 import PlexCheckPage from "./pages/PlexCheck";
 import QualityPage from "./pages/Quality";
 import RulesPage from "./pages/Rules";
+import TorrentsPage from "./pages/Torrents";
 import SettingsPage from "./pages/Settings";
 import SuggestionsPage from "./pages/Suggestions";
 
@@ -30,6 +31,7 @@ const NAV: { en: string; nb: string; items: NavItem[] }[] = [
     { id: "quality", en: "Swap quality", nb: "Bytt kvalitet" },
     { id: "duplicates", en: "Duplicates", nb: "Duplikater" },
     { id: "downloads", en: "Downloads", nb: "Nedlastinger" },
+    { id: "torrents", en: "Torrents", nb: "Torrenter" },
     { id: "plex", en: "Plex differences", nb: "Plex-avvik" },
     { id: "other", en: "Other storage", nb: "Annen lagring" },
   ] },
@@ -126,6 +128,7 @@ export default function App() {
     case "files": page = <FilesPage />; break;
     case "quality": page = <QualityPage />; break;
     case "rules": page = <RulesPage tab={param} />; break;
+    case "torrents": page = <TorrentsPage />; break;
     case "duplicates": page = <DuplicatesPage />; break;
     case "downloads": page = <DownloadsPage />; break;
     case "plex": page = <PlexCheckPage />; break;

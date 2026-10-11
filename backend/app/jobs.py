@@ -157,6 +157,8 @@ def _scheduler():
                 swaps.poll()
             except Exception:
                 log.exception("Following up swaps failed")
+            from . import torrents
+            torrents.apply_rule_safely()
             with db.conn() as c:
                 last_backup = db.kv_get(c, "last_backup", 0) or 0
             if now - last_backup > 86400:

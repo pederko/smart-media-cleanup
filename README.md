@@ -45,6 +45,7 @@ The web UI is available in **English and Norwegian** (EN/NO in the menu). *[Les 
 | **Downloads** | What is in the downloads folder, whether it was imported, and what can safely go. |
 | **Plex differences** | Files on disk Plex does not know (with the likely reason), and Plex entries whose files are gone. |
 | **Other storage** | With the TrueNAS integration: which datasets and snapshots use the space outside your libraries, and where to clean them up. Read only. |
+| **Torrents** | Everything in qBittorrent: in library, orphaned, broken, still importing. Stop, set limits, remove (with files only when safe), and a seeding rule for Radarr/Sonarr torrents only. |
 | **Download rules** | How Radarr, Sonarr, Seerr and qBittorrent are set up, compared with TRaSH Guides: size limits per quality, quality profiles (remuxes, size-heavy custom formats), Seerr's default profile and seeding limits. Change them with one confirmation; a backup is saved first. |
 | **Activity** | Background jobs, swaps in progress and the log of everything the app has deleted. |
 
@@ -87,6 +88,7 @@ The web UI is available in **English and Norwegian** (EN/NO in the menu). *[Les 
 | Least privilege | Runs as `568:568` (apps), `cap_drop: ALL`, `no-new-privileges`, read-only root file system. Only the folders you mount are visible; app data, `ix-apps` and the like are out of reach. |
 | No ZFS access | No `zfs` commands. The optional TrueNAS integration uses an API key with the *Read-Only Admin* role. Snapshots are never touched. |
 | Secrets | Stored in `/data/settings.json` (mode 600) or as environment variables, masked in the API and UI. The browser only talks to the app, so the Plex token and API keys never leave the server. |
+| Torrents | Removing a torrent with its files is only offered when its content is found in a library, or – for orphaned ones – when deleting files on disk is switched on. The seeding rule only sets limits, on Radarr/Sonarr torrents that use the global limit, and only while *Allow changes* is on. |
 | Download rules | Size limits, profiles, Seerr and qBittorrent settings are only changed after a review, with the services re-read first. Every changed setting is backed up to `/data/backups/arr-setup-*.json` (mode 600) and can be restored from the page. Torrents are only removed when they are finished and their content is found in a library. |
 | Logged | Every deletion, swap and Plex change is shown under Activity → Deletion log and stored in the database (`audit`). |
 
@@ -184,7 +186,11 @@ Cleaning up helps once; the rules decide what comes in next. Under **Prevent →
 - **Size limits**: choose *Balanced* (recommended), *Space saver* or *TRaSH Guides* and adjust single values. Sizes are shown per movie (2 h) or episode (45 min). Existing files are not touched – the table shows how many are above the new limits, and *Swap quality* can replace them.
 - **Quality profiles**: stop remuxes, BR-DISK and Raw-HD in a profile, or create a recommended profile based on one of yours (keeps your custom formats). TRaSH's full custom format set (release groups, HDR, audio) is best synced with [Recyclarr](https://recyclarr.dev) – this page only touches what drives file size.
 - **Seerr**: choose the profile new requests get.
-- **Seeding**: for finished torrents to disappear by themselves, qBittorrent must stop a torrent when it has seeded enough, and Radarr/Sonarr must have *Remove completed* on. Both can be set here. With qBittorrent connected, finished torrents that are already in a library can be removed with their downloaded files right away. Private trackers may require a minimum seeding time – their rules win.
+- **Seeding**: for finished torrents to disappear by themselves, qBittorrent must stop a torrent when it has seeded enough, and Radarr/Sonarr must have *Remove completed* on. Both can be set here. The recommended way is the **seeding rule for Radarr/Sonarr only** (ratio, time and/or hours without uploading): the app keeps it on torrents in their categories that use the global limit, checked every 5 minutes, and leaves torrents with their own limit (e.g. private trackers) and all other torrents alone. Private trackers may require a minimum seeding time – their rules win.
+
+### Torrents
+
+With qBittorrent connected, **Free up space → Torrents** shows every torrent and what it is: *in library*, *orphaned* (from Radarr/Sonarr, finished, not in their queue and not in any library), *error*, *being imported*, *downloading*, or from another category. Select and stop them, give them the global limit, remove the torrent only, or remove it with its files. Files are deleted only for torrents found in a library – or for orphaned ones and other categories when *Allow deleting files on disk* is on too. Torrents Radarr/Sonarr are still importing are never touched.
 - **Backups**: every change saves the previous settings first; restore with one click.
 
 Changing these needs *Allow changes through Radarr, Sonarr, Plex, Seerr and qBittorrent* under Settings → Deletion.
@@ -256,6 +262,7 @@ Settings are stored in `/data/settings.json` and edited in the app. Environment 
 | Incremental scan | every 24 hours |
 | Full scan (stat of every file) | every 7 days, as part of a refresh |
 | Follow-up of swaps | every 5 minutes (more often while the page is open) |
+| Seeding rule for Radarr/Sonarr torrents (when switched on) | every 5 minutes |
 | Check for a new version on GitHub | every 6 hours |
 | Backup of the database and settings | daily, 7 are kept |
 
@@ -344,6 +351,7 @@ backend/app/
   releases.py      search for smaller versions through Radarr/Sonarr
   swaps.py         swap: download first, swap afterwards
   quality.py       the Swap quality overview and batch swaps
+  torrents.py      qBittorrent: classify torrents, seeding rule (scheduler)
   arrsetup.py      download rules: size limits, profiles, Seerr defaults, seeding (plan → token → execute, backup/restore)
   plexcheck.py     disk vs Plex, delete orphaned folders, remove missing entries from Plex
   posters.py       posters from Plex/Radarr/Sonarr with a local cache

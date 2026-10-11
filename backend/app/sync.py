@@ -150,8 +150,8 @@ def run(progress: Progress) -> dict:
     def do_qbit(p):
         with qbit.Client(svc["qbittorrent"]) as q:
             torrents = q.torrents()
-        seeding = sum(1 for t in torrents if (t.get("progress") or 0) >= 1 and "pause" not in (t.get("state") or "")
-                      and "stopped" not in (t.get("state") or ""))
+        from .torrents import ERROR_STATES, STOPPED_STATES
+        seeding = sum(1 for t in torrents if (t.get("progress") or 0) >= 1 and t.get("state") not in STOPPED_STATES | ERROR_STATES)
         return len(torrents), fmt("{n} torrents, {s} seeding", "{n} torrenter, {s} deler", n=len(torrents), s=seeding)
 
     step("radarr", 0.0, do_radarr)

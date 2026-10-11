@@ -28,7 +28,7 @@ from . import (actions, arrsetup, db, downloads, dupes, jobs, plexcheck, posters
 from .analysis import engine
 from .i18n import L, AppError, LocalizedJSONResponse, lang_var, localize, parse_lang, text
 
-VERSION = os.environ.get("SMC_VERSION", "1.1.2")
+VERSION = os.environ.get("SMC_VERSION", "1.2.0")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 NO_SCHEDULER = os.environ.get("SMC_DISABLE_SCHEDULER") == "1"
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
@@ -684,6 +684,12 @@ def arr_setup_plan(req: ChangesRequest):
 @app.post("/api/arr-setup/execute")
 def arr_setup_execute(req: ChangesRequest):
     return arrsetup.execute(req.changes, req.token or "")
+
+
+@app.get("/api/torrents")
+def torrents_view():
+    from . import torrents
+    return torrents.view()
 
 
 @app.get("/api/arr-setup/backups")

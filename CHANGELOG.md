@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0
+**Torrents** – qBittorrent gets its own page.
+
+- Every torrent, sorted into what it is: *in library* (safe to remove with its files – the library copy stays), *orphaned* (from Radarr/Sonarr, finished, not in their queue and not in any library), *error* (qBittorrent reports errors or missing files), *being imported*, *downloading*, *not from Radarr/Sonarr* and *unknown*.
+- Select torrents and stop them, give them the global seeding limit, remove the torrent only, or remove it with its files. Files are only deleted for torrents found in a library – or, for orphaned ones and other categories, when «Allow deleting files on disk» is on too. Torrents Radarr/Sonarr are still importing are never touched.
+- **Seeding rule for Radarr/Sonarr only:** once switched on (and confirmed), the app keeps a ratio/time/inactivity limit on torrents in Radarr's and Sonarr's categories that use qBittorrent's global limit – checked every 5 minutes. Torrents with their own limit (e.g. a private tracker's rules from an indexer) and all your other torrents are left alone. It never removes anything; Radarr/Sonarr's «Remove completed» does that after the import.
+- **Inactive seeding limit:** stop torrents that have not uploaded anything for a while (qBittorrent 4.6+), both in the rule and in qBittorrent's global limits.
+- **Fixed:** «… changed since the summary was shown» when applying a qBittorrent change while any torrent was downloading. Only the torrents a change is about are compared now, and if something did change, the summary is read again so you can apply it right away.
+
 ## 1.1.2
 - **Fixed:** changing the profile Seerr gives new requests failed with «request/body/id is read-only». The server entry is now sent without its id (restoring a backup had the same problem).
 

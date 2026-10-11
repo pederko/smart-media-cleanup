@@ -122,7 +122,7 @@ def test_sync_all_services_ok(env):
     for name in ("radarr", "sonarr", "plex", "tautulli", "seerr"):
         assert not env["sync"][name].startswith("error"), env["sync"]
     assert env["sync"]["truenas"] == "not configured"
-    assert env["sync"]["qbittorrent"].startswith("4 torrents"), env["sync"]
+    assert env["sync"]["qbittorrent"] == "7 torrents, 5 seeding", env["sync"]
 
 
 def test_big_unwatched_movie_is_top_low_risk(env):
@@ -898,11 +898,11 @@ def test_arr_setup_overview(client):
     # qBittorrent: only Radarr/Sonarr categories; imported ones can be removed
     q = d["qbit"]
     t = {x["hash"]: x for x in q["torrents"]}
-    assert set(t) == {"aaa", "bbb", "ccc"}
+    assert set(t) == {"aaa", "bbb", "ccc", "eee", "fff", "ggg"}  # Radarr/Sonarr categories only
     assert t["aaa"]["import_status"] == "hardlinked" and t["aaa"]["removable"]
     assert t["bbb"]["import_status"] == "copied" and t["bbb"]["removable"]
     assert t["ccc"]["import_status"] == "not_imported" and not t["ccc"]["removable"]
-    assert q["finding"]["change"]["op"] == "qbit_prefs"
+    assert q["finding"]["change"]["op"] == "seed_rule"
     assert q["url_hint"].endswith("/qbit")
 
 
@@ -1021,3 +1021,94 @@ def test_disallow_leaves_no_single_quality_group():
     assert "Bluray-1080p" in allowed_qualities(p) and "Bluray-1080p Remux" not in allowed_qualities(p)
     assert cutoff_name(p) == "Bluray-1080p"
     ms._validate_profile(p)  # would be accepted by Sonarr
+
+
+
+# ------------------------------------------------------------------ torrents
+
+def test_torrents_classified(client):
+    ms.reset_arr_state()
+    ms.QUEUE[:] = [{"downloadId": "GGG", "title": "Importing.2025"}]
+    try:
+        d = client.get("/api/torrents").json()
+        cls = {t["hash"]: t["class"] for t in d["torrents"]}
+        assert cls == {"aaa": "imported", "bbb": "imported", "ccc": "orphaned", "ddd": "other", "eee": "error",
+                       "fff": "downloading", "ggg": "importing"}
+        t = {x["hash"]: x for x in d["torrents"]}
+        assert t["aaa"]["import_status"] == "hardlinked" and t["aaa"]["freed"] == 0
+        assert t["bbb"]["freed"] > 0 and t["bbb"]["limit"] == "none" and t["aaa"]["limit"] == "global"
+        assert not t["fff"]["removable"] and not t["ggg"]["files_removable"]
+        assert d["categories"] == {"radarr": "radarr", "sonarr": "sonarr"}
+        assert d["limits"]["inactive_supported"] is True
+    finally:
+        ms.QUEUE.clear()
+
+
+def test_torrent_removal_rules(client, no_refresh):
+    ms.reset_arr_state()
+    ms.QUEUE[:] = [{"downloadId": "GGG"}]
+    _enable(client, True)
+    try:
+        changes = [{"op": "qbit_remove", "hashes": ["ccc", "eee", "fff", "ggg"], "files": True}]
+        p = client.post("/api/arr-setup/plan", json={"changes": changes}).json()
+        kept = " | ".join(r["what"] for r in p["rows"] if r.get("skipped"))
+        assert "Old.Download" in kept and "Coming.Soon" in kept and "Importing" in kept  # files switch off, downloading, importing
+        assert p["changes"] == 1  # only the broken one (missing files -> torrent only)
+        # a torrent going on downloading does not invalidate the summary
+        ms.QBIT["torrents"]["fff"]["progress"] = 0.5
+        ms.QBIT["torrents"]["ddd"]["progress"] = 0.99
+        r = client.post("/api/arr-setup/execute", json={"changes": changes, "token": p["token"]})
+        assert r.status_code == 200, r.text
+        dele = [x for x in ms.QBIT["log"] if x[0] == "delete"]
+        assert len(dele) == 1 and dele[0][1]["hashes"] == "eee" and dele[0][1]["deleteFiles"] == "false"
+        # with «Allow deleting files on disk», the orphaned download goes with its files
+        st = client.get("/api/settings").json()
+        st["actions"] = {"enabled": True, "files_enabled": True}
+        client.put("/api/settings", json=st)
+        changes = [{"op": "qbit_remove", "hashes": ["ccc"], "files": True}, {"op": "qbit_stop", "hashes": ["ddd"]}]
+        p = client.post("/api/arr-setup/plan", json={"changes": changes}).json()
+        assert "SLETT" in p["rows"][0]["what"] and p["changes"] == 2
+        r = client.post("/api/arr-setup/execute", json={"changes": changes, "token": p["token"]}).json()
+        assert r["failed"] == 0, r
+        assert "ccc" not in ms.QBIT["torrents"] and ms.QBIT["torrents"]["ddd"]["state"] == "stoppedUP"
+    finally:
+        ms.QUEUE.clear()
+        _enable(client, False)
+        ms.reset_arr_state()
+
+
+def test_seeding_rule_only_arr_torrents_with_global_limit(client, no_refresh):
+    from app import torrents
+    ms.reset_arr_state()
+    _enable(client, True)
+    try:
+        changes = [{"op": "seed_rule", "enabled": True, "ratio": 1.5, "minutes": 2880, "inactive": 720}]
+        p = client.post("/api/arr-setup/plan", json={"changes": changes}).json()
+        assert p["changes"] == 1, p
+        r = client.post("/api/arr-setup/execute", json={"changes": changes, "token": p["token"]}).json()
+        assert r["failed"] == 0, r
+        t = ms.QBIT["torrents"]
+        assert (t["aaa"]["ratio_limit"], t["aaa"]["seeding_time_limit"], t["aaa"]["inactive_seeding_time_limit"]) == (1.5, 2880, 720)
+        assert t["bbb"]["ratio_limit"] == -1          # had its own setting («no limit») – left alone
+        assert t["ddd"]["ratio_limit"] == -2          # not from Radarr/Sonarr – left alone
+        assert torrents.apply_rule() == 0             # nothing more to do
+        # a new torrent from Radarr gets the rule on the next round; a changed rule is re-applied
+        ms.QBIT["torrents"]["hhh"] = {**t["ccc"], "hash": "hhh", "name": "New.2026", "ratio_limit": -2, "seeding_time_limit": -2,
+                                   "inactive_seeding_time_limit": -2}
+        assert torrents.apply_rule() == 1
+        s = settings.get()
+        s["seeding_rule"]["ratio"] = 2.0
+        settings.save(s)
+        assert torrents.apply_rule() >= 5 and t["aaa"]["ratio_limit"] == 2.0
+        # switched off «Allow changes» -> the rule does nothing
+        _enable(client, False)
+        s = settings.get(); s["seeding_rule"]["ratio"] = 3.0; settings.save(s)
+        assert torrents.apply_rule() == 0
+        # restore turns the rule off again
+        _enable(client, True)
+        rr = client.post("/api/arr-setup/restore", json={"name": r["backup"]}).json()
+        assert rr["failed"] == 0 and settings.get()["seeding_rule"]["enabled"] is False
+    finally:
+        _enable(client, False)
+        s = settings.get(); s["seeding_rule"] = {"enabled": False, "ratio": 1.0, "minutes": 1440, "inactive": None}; settings.save(s)
+        ms.reset_arr_state()

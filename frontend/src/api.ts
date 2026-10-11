@@ -64,7 +64,9 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
       const j = await r.json();
       if (j.detail) msg = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
     } catch { /* ignore */ }
-    throw new Error(msg);
+    const err = new Error(msg) as Error & { status?: number };
+    err.status = r.status;
+    throw err;
   }
   return r.json() as Promise<T>;
 }

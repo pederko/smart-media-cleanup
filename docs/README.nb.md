@@ -46,6 +46,7 @@ Utviklerdokumentasjonen (kodestruktur, tester, språkkonvensjoner) finnes i den 
 | **Nedlastinger** | Hva som ligger i nedlastingsmappen, om det er importert, og hva som trygt kan fjernes. |
 | **Plex-avvik** | Filer på disk som Plex ikke kjenner (med sannsynlig årsak), og Plex-oppføringer der filene er borte. |
 | **Annen lagring** | Med TrueNAS-integrasjonen: hvilke datasett og snapshots som bruker plassen utenfor bibliotekene, og hvor de ryddes. Kun lesing. |
+| **Torrenter** | Alt i qBittorrent: i biblioteket, foreldreløst, ødelagt, importeres. Stopp, sett grenser, fjern (med filer bare når det er trygt), og en delingsregel kun for torrenter fra Radarr/Sonarr. |
 | **Nedlastingsregler** | Hvordan Radarr, Sonarr, Seerr og qBittorrent er satt opp, sammenlignet med TRaSH Guides: størrelsesgrenser per kvalitet, kvalitetsprofiler (remuxer, custom formats som drar opp størrelsen), Seerrs standardprofil og delingsgrenser. Endres med én bekreftelse; en sikkerhetskopi lagres først. |
 | **Aktivitet** | Bakgrunnsjobber, pågående bytter og loggen over alt appen har slettet. |
 
@@ -88,6 +89,7 @@ Utviklerdokumentasjonen (kodestruktur, tester, språkkonvensjoner) finnes i den 
 | Minst mulig privilegier | Kjører som `568:568` (apps), `cap_drop: ALL`, `no-new-privileges`, skrivebeskyttet rotfilsystem. Bare mappene du monterer er synlige; appdata, `ix-apps` og lignende er utenfor rekkevidde. |
 | Ingen ZFS-tilgang | Ingen `zfs`-kommandoer. Den valgfrie TrueNAS-integrasjonen bruker en API-nøkkel med rollen *Read-Only Admin*. Snapshots røres aldri. |
 | Hemmeligheter | Lagres i `/data/settings.json` (modus 600) eller som miljøvariabler, maskert i API og grensesnitt. Nettleseren snakker bare med appen, så Plex-tokenet og API-nøklene forlater aldri serveren. |
+| Torrenter | Å fjerne en torrent med filer tilbys bare når innholdet finnes i et bibliotek, eller – for foreldreløse – når sletting av filer på disk er slått på. Delingsregelen setter bare grenser, på torrenter fra Radarr/Sonarr som bruker den globale grensen, og bare mens *Tillat endringer* er på. |
 | Nedlastingsregler | Størrelsesgrenser, profiler, Seerr- og qBittorrent-innstillinger endres bare etter en gjennomgang, og tjenestene leses på nytt først. Hver endret innstilling sikkerhetskopieres til `/data/backups/arr-setup-*.json` (modus 600) og kan gjenopprettes fra siden. Torrenter fjernes bare når de er ferdige og innholdet finnes i et bibliotek. |
 | Loggført | Hver sletting, bytte og Plex-endring vises under Aktivitet → Slettelogg og lagres i databasen (`audit`). |
 
@@ -185,7 +187,11 @@ Rydding hjelper én gang; reglene bestemmer hva som kommer inn etterpå. Under *
 - **Størrelsesgrenser**: velg *Balansert* (anbefalt), *Plassbesparende* eller *TRaSH Guides* og juster enkeltverdier. Størrelser vises per film (2 t) eller episode (45 min). Eksisterende filer røres ikke – tabellen viser hvor mange som er over de nye grensene, og *Bytt kvalitet* kan erstatte dem.
 - **Kvalitetsprofiler**: stopp remuxer, BR-DISK og Raw-HD i en profil, eller opprett en anbefalt profil basert på en av dine (beholder custom formats). TRaSH sitt fulle sett med custom formats (utgivergrupper, HDR, lyd) synkroniseres best med [Recyclarr](https://recyclarr.dev) – denne siden rører bare det som styrer filstørrelsen.
 - **Seerr**: velg profilen nye forespørsler får.
-- **Deling**: for at ferdige torrenter skal forsvinne av seg selv, må qBittorrent stoppe en torrent når den har delt nok, og Radarr/Sonarr må ha *Remove completed* på. Begge kan settes her. Med qBittorrent tilkoblet kan ferdige torrenter som allerede ligger i et bibliotek fjernes med de nedlastede filene med en gang. Private trackere kan kreve en minste delingstid – reglene deres går foran.
+- **Deling**: for at ferdige torrenter skal forsvinne av seg selv, må qBittorrent stoppe en torrent når den har delt nok, og Radarr/Sonarr må ha *Remove completed* på. Begge kan settes her. Anbefalt er **delingsregelen kun for Radarr/Sonarr** (ratio, tid og/eller timer uten opplasting): appen holder den på torrenter i deres kategorier som bruker den globale grensen, sjekket hvert 5. minutt, og lar torrenter med egen grense (f.eks. private trackere) og alle andre torrenter være. Private trackere kan kreve en minste delingstid – reglene deres går foran.
+
+### Torrenter
+
+Med qBittorrent tilkoblet viser **Frigjør plass → Torrenter** hver torrent og hva den er: *i biblioteket*, *foreldreløs* (fra Radarr/Sonarr, ferdig, ikke i køen deres og ikke i noe bibliotek), *feil*, *importeres*, *lastes ned*, eller fra en annen kategori. Velg og stopp dem, gi dem den globale grensen, fjern bare torrenten, eller fjern den med filer. Filer slettes bare for torrenter som finnes i et bibliotek – eller for foreldreløse og andre kategorier når *Tillat sletting av filer på disk* også er på. Torrenter Radarr/Sonarr fortsatt importerer røres aldri.
 - **Sikkerhetskopier**: hver endring lagrer de forrige innstillingene først; gjenopprett med ett klikk.
 
 Endringer her krever *Tillat endringer via Radarr, Sonarr, Plex, Seerr og qBittorrent* under Innstillinger → Sletting.
@@ -257,6 +263,7 @@ Innstillingene lagres i `/data/settings.json` og redigeres i appen. Miljøvariab
 | Inkrementell skanning | hver 24. time |
 | Full skanning (stat av hver fil) | hver 7. dag, som del av en oppdatering |
 | Oppfølging av bytter | hvert 5. minutt (oftere mens siden er åpen) |
+| Delingsregel for torrenter fra Radarr/Sonarr (når den er på) | hvert 5. minutt |
 | Se etter ny versjon på GitHub | hver 6. time |
 | Sikkerhetskopi av database og innstillinger | daglig, 7 beholdes |
 

@@ -1,12 +1,13 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { bytes, date, num } from "../format";
 import { getLang, plural, t } from "../i18n";
-import { Drawer, Empty, ErrorNote, Loading, PageHeader, statusLabel, StatusDot, SwitchedOff, Tray, useFetch, useRefreshTick } from "../components/common";
+import { Drawer, Empty, ErrorNote, Loading, PageHeader, Tray, useFetch, useRefreshTick } from "../components/common";
+import { Change, Check, ExecResult, gbText, perTitle, Results, ReviewDialog, SVC_NAME } from "../components/ArrChanges";
+import SeedingLimits, { QbitLimits } from "../components/SeedingLimits";
 
 // ------------------------------------------------------------------ types from /api/arr-setup
 
-type Change = Record<string, unknown> & { op: string };
 type Finding = { id: string; level: "warn" | "info"; text: string; change?: Change };
 type Def = { id: number; name: string; title: string; min: number | null; preferred: number | null; max: number | null;
   presets: Record<string, [number, number, number | null]>; used: boolean };
@@ -23,19 +24,13 @@ type Slot = { field: string; label: string; profile: number | null; profile_name
   finding?: { level: string; text: string; alternatives: number[] } };
 type Server = { kind: "radarr" | "sonarr"; id: number; name: string; is4k: boolean; default: boolean; same_instance: boolean;
   profiles: { id: number; name: string }[]; slots: Slot[] };
-type Torrent = { hash: string; name: string; category: string; state: string; complete: boolean; ratio: number; seeding_minutes: number;
-  ratio_limit: number; seeding_limit: number; size: number; import_status: string | null; title_name: string | null; freed: number;
-  imported: boolean; removable: boolean };
-type Qbit = { configured: boolean; error?: string; url_hint?: string | null;
-  limits?: { ratio_enabled: boolean; ratio: number; time_enabled: boolean; minutes: number; action: number };
-  finding?: Finding | null; torrents?: Torrent[]; summary?: { count: number; size: number; removable: number; removable_freed: number } };
+type Qbit = QbitLimits & { finding?: { id: string; level: "warn" | "info"; text: string; change?: Change } | null;
+  torrents?: { hash: string; class: string; removable: boolean; freed: number }[];
+  summary?: { count: number; size: number; seeding: number; removable: number; removable_freed: number;
+    by_class: Record<string, { count: number; size: number; freed: number }> } };
 type Overview = { enabled: boolean; services: Record<"radarr" | "sonarr", Svc>; presets: Record<string, { info: string }>;
   seerr: { configured: boolean; error?: string; servers: Server[] }; qbit: Qbit; seed_default: { ratio: number; minutes: number } };
-type PlanRow = { service: string; area: string; what: string; before?: unknown; after?: unknown; kind?: string; skipped?: boolean; bytes?: number };
-type Plan = { enabled: boolean; rows: PlanRow[]; errors: { index: number; error: string }[]; changes: number; token: string };
-type ExecResult = { results: { service: string; what: string; status: string; detail: string }[]; done: number; failed: number; backup: string | null };
 
-const SVC_NAME: Record<string, string> = { radarr: "Radarr", sonarr: "Sonarr", seerr: "Seerr", qbittorrent: "qBittorrent" };
 const TABS = ["advice", "sizes", "profiles", "seerr", "seeding", "backups"] as const;
 type Tab = typeof TABS[number];
 const tabLabel = (id: Tab) => ({
@@ -43,10 +38,6 @@ const tabLabel = (id: Tab) => ({
   seerr: "Seerr", seeding: t("Seeding", "Deling"), backups: t("Backups", "Sikkerhetskopier"),
 })[id];
 
-/** MB per minute -> bytes for one title of the given runtime. */
-const perTitle = (mbpm: number | null | undefined, runtime: number) => (mbpm == null ? null : mbpm * runtime * 1024 * 1024);
-const gbText = (mbpm: number | null | undefined, runtime: number, unl: number) =>
-  mbpm == null || mbpm >= unl ? t("Unlimited", "Ubegrenset") : bytes(perTitle(mbpm, runtime));
 
 export default function RulesPage({ tab: tabParam }: { tab: string }) {
   const tick = useRefreshTick();
@@ -132,15 +123,6 @@ function collect(d: Overview | null): Item[] {
       `${d.qbit.summary.removable} ferdige torrenter ligger allerede i biblioteket og deler fortsatt. Fjernes de med filene, frigjøres ${bytes(d.qbit.summary.removable_freed)} (hardlenkede frigjør ingenting, men slutter å dele).`),
     change: { op: "qbit_remove", hashes: (d.qbit.torrents ?? []).filter((x) => x.removable).map((x) => x.hash) } });
   return out;
-}
-
-function Check({ id, change, changes, toggle, label }: { id: string; change: Change; changes: Record<string, Change>; toggle: TabProps["toggle"]; label?: string }) {
-  return (
-    <label className="check small">
-      <input type="checkbox" checked={!!changes[id]} onChange={(e) => toggle(id, e.target.checked ? change : null)} />
-      {label ?? t("Include", "Ta med")}
-    </label>
-  );
 }
 
 function NotConfigured({ what }: { what: string }) {
@@ -443,23 +425,8 @@ function SeerrTab({ data, changes, toggle }: TabProps) {
 
 function SeedingTab({ data, changes, toggle }: TabProps) {
   const q = data.qbit;
-  const [ratio, setRatio] = useState<string>(() => String(q.limits?.ratio_enabled ? q.limits.ratio : data.seed_default.ratio));
-  const [hours, setHours] = useState<string>(() => String(Math.round(((q.limits?.time_enabled ? q.limits.minutes : data.seed_default.minutes) / 60) * 10) / 10));
-  const [only, setOnly] = useState<"all" | "removable">("removable");
-  const [sel, setSel] = useState<string[]>([]);
-  const torrents = (q.torrents ?? []).filter((x) => only === "all" || x.removable);
-  const prefsChange = () => {
-    const r = ratio.trim() === "" ? null : Number(ratio.replace(",", "."));
-    const h = hours.trim() === "" ? null : Number(hours.replace(",", "."));
-    return { op: "qbit_prefs", ratio: r, minutes: h == null ? null : Math.round(h * 60) };
-  };
-  useEffect(() => { if (changes["qbit:prefs"]) toggle("qbit:prefs", prefsChange()); // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ratio, hours]);
-  const chosen = torrents.filter((x) => sel.includes(x.hash));
-  const act = (x: Torrent) => (x.seeding_limit === -1 && x.ratio_limit === -1 ? t("no limit", "ingen grense") : x.seeding_limit === -2 && x.ratio_limit === -2 ? t("global", "global") : t("own", "egen"));
-  const importLabel = (s: string | null) => ({ hardlinked: t("In library (hardlink)", "I biblioteket (hardlenke)"), copied: t("In library (copy)", "I biblioteket (kopi)"),
-    not_imported: t("Not imported", "Ikke importert"), no_video: t("No video", "Ingen video") } as Record<string, string>)[s ?? ""] ?? t("Unknown", "Ukjent");
-
+  const sum = q.summary;
+  const cls = sum?.by_class ?? {};
   return (
     <>
       <section className="brief">
@@ -481,77 +448,31 @@ function SeedingTab({ data, changes, toggle }: TabProps) {
       })}
 
       <h3 style={{ marginTop: 24 }}>{t("2. qBittorrent: stop when seeded enough", "2. qBittorrent: stopp når det er delt nok")}</h3>
-      {!q.configured ? (
-        <p className="small muted">{t("Connect qBittorrent under", "Koble til qBittorrent under")} <a href="#/settings/services">{t("Settings → Connections", "Innstillinger → Tilkoblinger")}</a>{q.url_hint ? t(` (Radarr uses ${q.url_hint})`, ` (Radarr bruker ${q.url_hint})`) : ""}. {t("Or set it in qBittorrent yourself: Options → BitTorrent → Seeding limits → «When ratio reaches» / «When total seeding time reaches» → «Stop torrent».",
-          "Eller sett det i qBittorrent selv: Options → BitTorrent → Seeding limits → «When ratio reaches» / «When total seeding time reaches» → «Stop torrent».")}</p>
-      ) : q.error ? <ErrorNote error={q.error} /> : (
-        <div className={`rule ${q.finding ? "warn" : "ok"}`}>
-          <div style={{ display: "grid", gap: 8 }}>
-            <div>{t("Now:", "Nå:")} {q.limits?.ratio_enabled ? t(`ratio ${q.limits.ratio}`, `ratio ${q.limits.ratio}`) : t("no ratio limit", "ingen ratio-grense")}, {q.limits?.time_enabled ? t(`${num(q.limits.minutes / 60, 1)} hours`, `${num(q.limits.minutes / 60, 1)} timer`) : t("no time limit", "ingen tidsgrense")}{q.limits?.action !== 0 ? t(" – the action is not «Stop»", " – handlingen er ikke «Stopp»") : ""}.</div>
-            <div className="toolbar" style={{ margin: 0 }}>
-              <label className="check small">{t("Stop at ratio", "Stopp ved ratio")} <input type="text" inputMode="decimal" style={{ width: 60 }} value={ratio} onChange={(e) => setRatio(e.target.value)} /></label>
-              <label className="check small">{t("or after", "eller etter")} <input type="text" inputMode="decimal" style={{ width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} /> {t("hours", "timer")}</label>
-            </div>
-            <div className="small muted">{t("Applies to every torrent that uses the global limit – also ones not from Radarr/Sonarr. Private trackers often require a minimum seeding time; their rules win over this.",
-              "Gjelder alle torrenter som bruker den globale grensen – også de som ikke kommer fra Radarr/Sonarr. Private trackere krever ofte en minste delingstid; reglene deres går foran dette.")}</div>
-          </div>
-          <Check id="qbit:prefs" change={prefsChange()} changes={changes} toggle={toggle} label={t("Set", "Sett")} />
-        </div>
-      )}
+      <SeedingLimits q={q} changes={changes} toggle={toggle} />
 
       {(["radarr", "sonarr"] as const).some((svc) => data.services[svc]?.seeding?.indexers.some((i) => i.ratio != null || i.minutes != null || i.prowlarr)) && (
         <>
           <h3 style={{ marginTop: 24 }}>{t("Indexer seed limits", "Delingsgrenser per indekser")}</h3>
-          <p className="small muted" style={{ maxWidth: 780 }}>{t("An indexer's own seed ratio/time is given to qBittorrent with each torrent and wins over the global limit. Indexers synced from Prowlarr are set in Prowlarr (Indexers → edit → Seed Ratio / Seed Time) – changes made in Radarr/Sonarr are overwritten.",
-            "En indekser sin egen delingsratio/-tid sendes til qBittorrent med hver torrent og går foran den globale grensen. Indeksere synket fra Prowlarr settes i Prowlarr (Indexers → rediger → Seed Ratio / Seed Time) – endringer i Radarr/Sonarr overskrives.")}</p>
+          <p className="small muted" style={{ maxWidth: 780 }}>{t("An indexer's own seed ratio/time is given to qBittorrent with each torrent and wins over the limits above. Indexers synced from Prowlarr are set in Prowlarr (Indexers → edit → Seed Ratio / Seed Time) – changes made in Radarr/Sonarr are overwritten.",
+            "En indekser sin egen delingsratio/-tid sendes til qBittorrent med hver torrent og går foran grensene over. Indeksere synket fra Prowlarr settes i Prowlarr (Indexers → rediger → Seed Ratio / Seed Time) – endringer i Radarr/Sonarr overskrives.")}</p>
           <ul className="conseq small">
             {(["radarr", "sonarr"] as const).flatMap((svc) => (data.services[svc]?.seeding?.indexers ?? []).map((i) => (
-              <li key={svc + i.id}>{SVC_NAME[svc]} · {i.name}: {i.ratio != null ? `ratio ${i.ratio}` : t("ratio: global", "ratio: global")}, {i.minutes != null ? `${i.minutes} min` : t("time: global", "tid: global")}</li>
+              <li key={svc + i.id}>{SVC_NAME[svc]} · {i.name}: {i.ratio != null ? `ratio ${i.ratio}` : t("ratio: from qBittorrent", "ratio: fra qBittorrent")}, {i.minutes != null ? `${i.minutes} min` : t("time: from qBittorrent", "tid: fra qBittorrent")}</li>
             )))}
           </ul>
         </>
       )}
 
-      {q.configured && !q.error && (
+      {q.configured && !q.error && sum && (
         <>
-          <h3 style={{ marginTop: 24 }}>{t("3. Torrents from Radarr and Sonarr", "3. Torrenter fra Radarr og Sonarr")}</h3>
-          <p className="small muted" style={{ maxWidth: 780 }}>{t(`${q.summary?.count ?? 0} torrents (${bytes(q.summary?.size)}). Torrents that are finished and already in a library can be removed with their downloaded files now. Not-imported ones are never removed here.`,
-            `${q.summary?.count ?? 0} torrenter (${bytes(q.summary?.size)}). Torrenter som er ferdige og allerede i et bibliotek kan fjernes med de nedlastede filene nå. Ikke-importerte fjernes aldri herfra.`)}</p>
-          <div className="toolbar">
-            <div className="seg" role="group" aria-label={t("Show", "Vis")}>
-              <button aria-pressed={only === "removable"} onClick={() => setOnly("removable")}>{t(`Can be removed (${q.summary?.removable ?? 0})`, `Kan fjernes (${q.summary?.removable ?? 0})`)}</button>
-              <button aria-pressed={only === "all"} onClick={() => setOnly("all")}>{t("All", "Alle")}</button>
-            </div>
-            <button className="btn small" onClick={() => setSel(torrents.filter((x) => x.removable).map((x) => x.hash))}>{t("Select all removable", "Velg alle som kan fjernes")}</button>
-            {chosen.length > 0 && (
-              <>
-                <button className="btn small" onClick={() => toggle("qbit:remove", { op: "qbit_remove", hashes: chosen.filter((x) => x.removable).map((x) => x.hash) })} disabled={!chosen.some((x) => x.removable)}>
-                  {t(`Remove ${chosen.filter((x) => x.removable).length} with files`, `Fjern ${chosen.filter((x) => x.removable).length} med filer`)}</button>
-                <button className="btn small" onClick={() => toggle("qbit:limits", { op: "qbit_limits", hashes: chosen.map((x) => x.hash) })}>{t("Use the global limit", "Bruk den globale grensen")}</button>
-              </>
-            )}
-          </div>
-          {torrents.length === 0 ? <Empty>{t("Nothing here.", "Ingenting her.")}</Empty> : (
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th style={{ width: 28 }} /><th>{t("Torrent", "Torrent")}</th><th>{t("In library", "I biblioteket")}</th><th className="r">{t("Size", "Størrelse")}</th><th className="r">Ratio</th><th className="r">{t("Seeded", "Delt")}</th><th>{t("Limit", "Grense")}</th><th className="r">{t("Frees", "Frigjør")}</th></tr></thead>
-                <tbody>
-                  {torrents.map((x) => (
-                    <tr key={x.hash}>
-                      <td><input type="checkbox" checked={sel.includes(x.hash)} onChange={() => setSel(sel.includes(x.hash) ? sel.filter((h) => h !== x.hash) : [...sel, x.hash])} aria-label={x.name} /></td>
-                      <td className="title-cell"><span style={{ fontWeight: 560 }}>{x.name}</span><small>{x.category} · {x.state}{x.title_name ? ` · ${x.title_name}` : ""}</small></td>
-                      <td className="small">{x.removable ? <span className="ok-text">{importLabel(x.import_status)}</span> : <span className="muted">{x.complete ? importLabel(x.import_status) : t("Downloading", "Lastes ned")}</span>}</td>
-                      <td className="r">{bytes(x.size)}</td>
-                      <td className="r">{num(x.ratio, 2)}</td>
-                      <td className="r small">{num(x.seeding_minutes / 60 / 24, 1)} {t("d", "d")}</td>
-                      <td className="small">{act(x)}</td>
-                      <td className="r">{x.removable ? bytes(x.freed) : "–"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <h3 style={{ marginTop: 24 }}>{t("3. Torrents from Radarr and Sonarr now", "3. Torrenter fra Radarr og Sonarr nå")}</h3>
+          <ul className="conseq">
+            <li>{t(`${sum.count} torrents (${bytes(sum.size)}), ${sum.seeding} seeding.`, `${sum.count} torrenter (${bytes(sum.size)}), ${sum.seeding} deler.`)}</li>
+            {cls.imported && <li>{t(`${cls.imported.count} are already in a library and can be removed (frees ${bytes(cls.imported.freed)}).`, `${cls.imported.count} ligger allerede i et bibliotek og kan fjernes (frigjør ${bytes(cls.imported.freed)}).`)}</li>}
+            {cls.orphaned && <li>{t(`${cls.orphaned.count} orphaned: finished, not in Radarr/Sonarr's queue and not in any library (${bytes(cls.orphaned.size)}).`, `${cls.orphaned.count} foreldreløse: ferdige, ikke i køen til Radarr/Sonarr og ikke i noe bibliotek (${bytes(cls.orphaned.size)}).`)}</li>}
+            {cls.error && <li>{t(`${cls.error.count} with errors or missing files.`, `${cls.error.count} med feil eller manglende filer.`)}</li>}
+          </ul>
+          <p><a className="btn small" href="#/torrents">{t("Open Torrents", "Åpne Torrenter")}</a></p>
         </>
       )}
     </>
@@ -609,91 +530,6 @@ function BackupsTab({ onRestored }: { onRestored: () => void }) {
         </Drawer>
       )}
     </>
-  );
-}
-
-function Results({ res }: { res: ExecResult }) {
-  return (
-    <ul className="results">
-      {res.results.map((r, i) => <li key={i}><StatusDot status={r.status} /> <b>{SVC_NAME[r.service] ?? r.service}</b> {r.detail} <span className="small muted">({statusLabel(r.status)})</span></li>)}
-    </ul>
-  );
-}
-
-// ------------------------------------------------------------------ Review and confirm
-
-function fmtVal(row: PlanRow, v: unknown): string {
-  if (v === undefined) return "";
-  if (row.kind === "mbpm" && Array.isArray(v)) {
-    const rt = row.service === "radarr" ? 120 : 45;
-    const unl = row.service === "radarr" ? 2000 : 1000;
-    const [mn, pr, mx] = v as (number | null)[];
-    return `${bytes(perTitle(mn, rt))} / ${pr == null || pr >= unl - 5 ? t("max", "maks") : bytes(perTitle(pr, rt))} / ${gbText(mx, rt, unl)}`;
-  }
-  if (typeof v === "boolean") return v ? t("on", "på") : t("off", "av");
-  return String(v ?? "–");
-}
-
-function ReviewDialog({ changes, enabled, onClose, onDone }: { changes: Change[]; enabled: boolean; onClose: () => void; onDone: () => void }) {
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [res, setRes] = useState<ExecResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => { api.post<Plan>("/api/arr-setup/plan", { changes }).then(setPlan).catch((e) => setError(String(e.message))); }, [changes]);
-  const run = async () => {
-    if (!plan) return;
-    setBusy(true); setError(null);
-    try { setRes(await api.post<ExecResult>("/api/arr-setup/execute", { changes, token: plan.token })); onDone(); }
-    catch (e) { setError(String((e as Error).message)); } finally { setBusy(false); }
-  };
-  const rows = plan?.rows ?? [];
-  const groups = [...new Set(rows.map((r) => r.service))];
-  const freed = rows.reduce((a, r) => a + (r.bytes ?? 0), 0);
-  return (
-    <Drawer label={t("Review changes", "Se over endringer")} onClose={onClose} busy={busy} wide>
-      {res ? (
-        <>
-          <h1>{res.failed ? t("Partly done", "Delvis fullført") : t("Done", "Ferdig")}</h1>
-          <p className="lede">{t("Logged under Activity → Deletion log.", "Loggført under Aktivitet → Slettelogg.")}{res.backup ? t(` Backup: ${res.backup} (Download rules → Backups).`, ` Sikkerhetskopi: ${res.backup} (Nedlastingsregler → Sikkerhetskopier).`) : ""}</p>
-          <Results res={res} />
-        </>
-      ) : (
-        <>
-          <h1>{t("Review changes", "Se over endringer")}</h1>
-          {!plan && !error && <Loading />}
-          <ErrorNote error={error} />
-          {plan && (
-            <>
-              <p className="lede">{t("This is exactly what will be changed. Everything else – other profiles, custom formats, languages – stays as it is. A backup of each setting is saved first.",
-                "Dette er nøyaktig det som endres. Alt annet – andre profiler, custom formats, språk – blir som det er. En sikkerhetskopi av hver innstilling lagres først.")}</p>
-              {plan.errors.length > 0 && <div className="notice err">{plan.errors.map((e, i) => <div key={i}>{e.error}</div>)}</div>}
-              {groups.map((g) => (
-                <Fragment key={g}>
-                  <h3>{SVC_NAME[g] ?? g}</h3>
-                  <ul className="conseq">
-                    {rows.filter((r) => r.service === g).map((r, i) => (
-                      <li key={i} className={r.skipped ? "muted" : undefined}>{r.what}
-                        {r.before !== undefined && <div className="small muted">{fmtVal(r, r.before)} → <b>{fmtVal(r, r.after)}</b></div>}
-                        {r.bytes ? <span className="small muted"> · {t("frees", "frigjør")} {bytes(r.bytes)}</span> : null}
-                      </li>
-                    ))}
-                  </ul>
-                </Fragment>
-              ))}
-              {plan.changes === 0 && !plan.errors.length && <p>{t("Nothing to change – it is already like this.", "Ingenting å endre – det er allerede slik.")}</p>}
-              {freed > 0 && <p>{t("Removing torrents frees about", "Fjerning av torrenter frigjør omtrent")} <b>{bytes(freed)}</b>.</p>}
-              {!enabled && <SwitchedOff what="services" onClose={onClose} />}
-              <div className="toolbar" style={{ marginTop: 16 }}>
-                <button className="btn primary" onClick={run} disabled={busy || !enabled || plan.changes === 0 || plan.errors.length > 0}>
-                  {busy ? t("Applying…", "Utfører…") : t(`Apply ${plan.changes} change(s)`, `Utfør ${plan.changes} endring(er)`)}
-                </button>
-                <button className="btn" onClick={onClose} disabled={busy}>{t("Cancel", "Avbryt")}</button>
-              </div>
-            </>
-          )}
-        </>
-      )}
-    </Drawer>
   );
 }
 

@@ -556,7 +556,8 @@ def reset_arr_state():
     QBIT.clear()
     QBIT.update({
         "prefs": {"max_ratio_enabled": False, "max_ratio": -1, "max_seeding_time_enabled": False, "max_seeding_time": -1,
-                  "max_ratio_act": 0, "web_ui_port": 8080},
+                  "max_ratio_act": 0, "web_ui_port": 8080,
+                  "max_inactive_seeding_time_enabled": False, "max_inactive_seeding_time": -1},
         "torrents": {
             "aaa": {"hash": "aaa", "name": "Hardlinked.2011.mkv", "category": "radarr", "state": "stalledUP", "progress": 1,
                     "ratio": 3.2, "seeding_time": 90000, "ratio_limit": -2, "seeding_time_limit": -2, "size": 20 * GB,
@@ -567,6 +568,15 @@ def reset_arr_state():
             "ccc": {"hash": "ccc", "name": "Old.Download", "category": "radarr", "state": "stalledUP", "progress": 1,
                     "ratio": 0.1, "seeding_time": 7200, "ratio_limit": -2, "seeding_time_limit": -2, "size": 4 * GB,
                     "content_path": "/downloads/Old.Download", "added_on": int(NOW - 200 * DAY)},
+            "eee": {"hash": "eee", "name": "Broken.2019", "category": "sonarr", "state": "missingFiles", "progress": 1,
+                    "ratio": 0.0, "seeding_time": 0, "ratio_limit": -2, "seeding_time_limit": -2, "size": 2 * GB,
+                    "content_path": "/downloads/Broken.2019", "added_on": int(NOW - 50 * DAY)},
+            "fff": {"hash": "fff", "name": "Coming.Soon.2026", "category": "radarr", "state": "downloading", "progress": 0.4,
+                    "ratio": 0.0, "seeding_time": 0, "ratio_limit": -2, "seeding_time_limit": -2, "size": 9 * GB,
+                    "content_path": "/downloads/Coming.Soon.2026", "added_on": int(NOW - 1 * DAY)},
+            "ggg": {"hash": "ggg", "name": "Importing.2025", "category": "sonarr", "state": "stalledUP", "progress": 1,
+                    "ratio": 0.2, "seeding_time": 600, "ratio_limit": -2, "seeding_time_limit": -2, "size": 3 * GB,
+                    "content_path": "/downloads/Importing.2025", "added_on": int(NOW - 1 * DAY)},
             "ddd": {"hash": "ddd", "name": "Linux.iso", "category": "other", "state": "uploading", "progress": 1,
                     "ratio": 9, "seeding_time": 99999, "ratio_limit": -2, "seeding_time_limit": -2, "size": 1 * GB,
                     "content_path": "/downloads/Linux.iso", "added_on": int(NOW - 10 * DAY)},
@@ -744,7 +754,18 @@ async def q_limits(request: Request):
     for h in f["hashes"].split("|"):
         QBIT["torrents"][h]["ratio_limit"] = float(f["ratioLimit"])
         QBIT["torrents"][h]["seeding_time_limit"] = int(f["seedingTimeLimit"])
+        QBIT["torrents"][h]["inactive_seeding_time_limit"] = int(f["inactiveSeedingTimeLimit"])
     QBIT["log"].append(("setShareLimits", f))
+    return {}
+
+
+@app.post("/qbit/api/v2/torrents/stop")
+async def q_stop(request: Request):
+    _qcheck(request)
+    f = await _form(request)
+    for h in f["hashes"].split("|"):
+        QBIT["torrents"][h]["state"] = "stoppedUP"
+    QBIT["log"].append(("stop", f))
     return {}
 
 

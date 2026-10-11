@@ -461,59 +461,26 @@ def _seerr_view(arr_views: dict) -> dict:
     return {"configured": True, "servers": servers}
 
 
-def _torrent_status(paths_by_entry: list[dict], content_path: str | None) -> dict | None:
-    if not content_path:
-        return None
-    host = settings.map_service_path(content_path)
-    for e in paths_by_entry:
-        if host == e["path"] or host.startswith(e["path"] + "/"):
-            return e
-    return None
-
-
-def _qbit_view(categories: list[str]) -> dict:
-    cfg = _qbit_cfg()
-    if not cfg:
-        return {"configured": False}
-    from . import downloads
-    try:
-        with qbit.Client(cfg) as q:
-            prefs = q.preferences()
-            torrents = q.torrents()
-    except ServiceError as e:
-        return {"configured": True, "error": e.msg}
-    entries = downloads.overview()["items"]
-    cats = set(categories)
-    items = []
-    for t in torrents:
-        if cats and t.get("category") not in cats:
-            continue
-        e = _torrent_status(entries, t.get("content_path"))
-        complete = (t.get("progress") or 0) >= 1
-        imported = bool(e and e["status"] in ("hardlinked", "copied"))
-        items.append({
-            "hash": t["hash"], "name": t.get("name"), "category": t.get("category"), "state": t.get("state"),
-            "complete": complete, "ratio": round(t.get("ratio") or 0, 2), "seeding_minutes": int((t.get("seeding_time") or 0) / 60),
-            "ratio_limit": t.get("ratio_limit"), "seeding_limit": t.get("seeding_time_limit"), "size": t.get("size") or 0,
-            "added": t.get("added_on"), "tracker_private": bool(t.get("private")) if "private" in t else None,
-            "import_status": e["status"] if e else None, "title_name": e["title_name"] if e else None,
-            "freed": (e["freed"] if e else 0), "imported": imported,
-            "removable": complete and imported,
-        })
-    items.sort(key=lambda x: -x["size"])
-    global_limits = {"ratio_enabled": bool(prefs.get("max_ratio_enabled")), "ratio": prefs.get("max_ratio"),
-                     "time_enabled": bool(prefs.get("max_seeding_time_enabled")), "minutes": prefs.get("max_seeding_time"),
-                     "action": prefs.get("max_ratio_act")}
+def _qbit_view() -> dict:
+    from . import torrents
+    v = torrents.view(arr_only=True)
+    if not v.get("configured") or v.get("error"):
+        return v
+    lim = v["limits"]
     finding = None
-    if not (global_limits["ratio_enabled"] or global_limits["time_enabled"]) or global_limits["action"] != qbit.STOP:
-        finding = {"id": "qbit:prefs", "level": "warn",
+    if not (lim["ratio_enabled"] or lim["time_enabled"] or lim["inactive_enabled"] or v["rule"]["enabled"]) \
+            or (lim["action"] != qbit.STOP and not v["rule"]["enabled"]):
+        finding = {"id": "qbit:rule", "level": "warn",
                    "text": L("qBittorrent has no seeding limit that stops torrents, so Radarr/Sonarr never get to remove them.",
                              "qBittorrent har ingen delingsgrense som stopper torrenter, så Radarr/Sonarr får aldri fjernet dem."),
-                   "change": {"op": "qbit_prefs", **SEED_DEFAULT}}
-    return {"configured": True, "limits": global_limits, "finding": finding, "torrents": items,
-            "summary": {"count": len(items), "size": sum(i["size"] for i in items),
-                        "removable": sum(1 for i in items if i["removable"]),
-                        "removable_freed": sum(i["freed"] for i in items if i["removable"])}}
+                   "change": {"op": "seed_rule", "enabled": True, **SEED_DEFAULT, "inactive": None}}
+    imported = [t for t in v["torrents"] if t["class"] == "imported"]
+    v["finding"] = finding
+    v["summary"]["removable"] = len(imported)
+    v["summary"]["removable_freed"] = sum(t["freed"] for t in imported)
+    for t in v["torrents"]:
+        t["removable"] = t["class"] == "imported"
+    return v
 
 
 def overview() -> dict:
@@ -548,8 +515,7 @@ def overview() -> dict:
             "seeding": _seeding_view(svc, data),
         }
     out["seerr"] = _seerr_view(out["services"])
-    cats = [c for svc in ARR for c in (out["services"][svc].get("seeding") or {}).get("categories", [])]
-    out["qbit"] = _qbit_view(cats)
+    out["qbit"] = _qbit_view()
     hint = None
     for svc in ARR:
         for c in (out["services"][svc].get("seeding") or {}).get("clients", []):
@@ -573,6 +539,7 @@ class _State:
         self.seerr: dict[str, dict[int, dict]] = {}
         self.qbit_prefs: dict | None = None
         self.qbit_torrents: dict[str, dict] | None = None
+        self.touched: set[str] = set()  # only the torrents a change is about count for the fingerprint
 
     def arr_data(self, svc: str) -> dict:
         if svc not in self.arr:
@@ -606,15 +573,23 @@ class _State:
                 self.qbit_torrents = {t["hash"]: t for t in q.torrents()}
         return self.qbit_prefs, self.qbit_torrents
 
+    def torrent_ctx(self) -> dict:
+        if not hasattr(self, "_ctx"):
+            from . import torrents
+            self._ctx = torrents.arr_context()
+        return self._ctx
+
     def fingerprint(self) -> str:
-        def strip_t(t):  # torrents change all the time (ratio, speed) – compare what matters
-            return {k: t.get(k) for k in ("hash", "name", "progress", "content_path", "category")}
+        def strip_t(t):  # torrents change all the time (ratio, speed, progress) – compare what matters
+            return {"name": t.get("name"), "complete": (t.get("progress") or 0) >= 1, "content_path": t.get("content_path"),
+                    "category": t.get("category")}
         prefs = None
         if self.qbit_prefs is not None:
             prefs = {k: self.qbit_prefs.get(k) for k in ("max_ratio_enabled", "max_ratio", "max_seeding_time_enabled",
-                                                         "max_seeding_time", "max_ratio_act")}
+                                                         "max_seeding_time", "max_ratio_act",
+                                                         "max_inactive_seeding_time_enabled", "max_inactive_seeding_time")}
         blob = json.dumps({"arr": self.arr, "seerr": self.seerr, "qbit": prefs,
-                           "torrents": {h: strip_t(t) for h, t in (self.qbit_torrents or {}).items()}},
+                           "torrents": {h: strip_t(t) for h, t in (self.qbit_torrents or {}).items() if h in self.touched}},
                           sort_keys=True, default=str)
         return hashlib.sha256(blob.encode()).hexdigest()[:24]
 
@@ -734,49 +709,118 @@ def _plan_one(st: _State, ch: dict, work: dict) -> list[dict]:
     if op == "qbit_prefs":
         prefs, _ = st.qbit()
         p = work.setdefault(("qbit_prefs",), {})
-        ratio = ch.get("ratio")
-        minutes = ch.get("minutes")
+        ratio, minutes, inactive = ch.get("ratio"), ch.get("minutes"), ch.get("inactive")
         new = {"max_ratio_enabled": ratio is not None, "max_ratio": float(ratio) if ratio is not None else prefs.get("max_ratio"),
                "max_seeding_time_enabled": minutes is not None,
                "max_seeding_time": int(minutes) if minutes is not None else prefs.get("max_seeding_time"),
                "max_ratio_act": qbit.STOP}
+        if "max_inactive_seeding_time_enabled" in prefs:
+            new["max_inactive_seeding_time_enabled"] = inactive is not None
+            new["max_inactive_seeding_time"] = int(inactive) if inactive is not None else prefs.get("max_inactive_seeding_time")
+        elif inactive is not None:
+            raise ActionError(L("This qBittorrent version has no limit for inactive seeding (needs 4.6 or newer)",
+                                "Denne qBittorrent-versjonen har ingen grense for inaktiv deling (krever 4.6 eller nyere)"))
         changed = {k: v for k, v in new.items() if prefs.get(k) != v}
         if changed:
             p.update(changed)
             rows.append({"service": "qbittorrent", "area": "seeding",
-                         "what": L("qBittorrent: stop torrents when the seeding limit is reached",
-                                   "qBittorrent: stopp torrenter når delingsgrensen er nådd"),
+                         "what": L("qBittorrent, all torrents: stop when the seeding limit is reached",
+                                   "qBittorrent, alle torrenter: stopp når delingsgrensen er nådd"),
                          "before": _limits_text(prefs), "after": _limits_text({**prefs, **new})})
         return rows
-    if op in ("qbit_limits", "qbit_remove"):
-        _, torrents = st.qbit()
-        hashes = [h for h in ch.get("hashes") or [] if h in torrents]
-        if op == "qbit_limits" and hashes:
-            work.setdefault(("qbit_limits",), set()).update(hashes)
+    if op == "seed_rule":
+        from . import torrents
+        cur = torrents.rule()
+        new = {"enabled": bool(ch.get("enabled")), "ratio": _opt(ch.get("ratio"), float), "minutes": _opt(ch.get("minutes"), int),
+               "inactive": _opt(ch.get("inactive"), int)}
+        if new["enabled"] and new["ratio"] is None and new["minutes"] is None and new["inactive"] is None:
+            raise ActionError(L("Set a ratio, a seeding time or an inactivity limit", "Sett en ratio, en delingstid eller en inaktivitetsgrense"))
+        if new != cur:
+            work[("seed_rule",)] = new
             rows.append({"service": "qbittorrent", "area": "seeding",
-                         "what": fmt("qBittorrent: use the global seeding limit for {n} torrent(s)",
-                                     "qBittorrent: bruk den globale delingsgrensen for {n} torrent(er)", n=len(hashes))})
-        if op == "qbit_remove":
-            from . import downloads
-            entries = downloads.overview()["items"]
-            ok = []
-            for h in hashes:
-                t = torrents[h]
-                e = _torrent_status(entries, t.get("content_path"))
-                if (t.get("progress") or 0) < 1 or not e or e["status"] not in ("hardlinked", "copied"):
-                    rows.append({"service": "qbittorrent", "area": "seeding", "skipped": True,
-                                 "what": fmt("«{n}» is not imported to a library – kept", "«{n}» er ikke importert til et bibliotek – beholdes",
-                                             n=t.get("name"))})
-                    continue
-                ok.append(h)
-                rows.append({"service": "qbittorrent", "area": "seeding", "bytes": e["freed"],
-                             "what": fmt("Remove «{n}» from qBittorrent with its downloaded files (the library copy stays)",
-                                         "Fjern «{n}» fra qBittorrent med de nedlastede filene (kopien i biblioteket blir)",
-                                         n=t.get("name"))})
-            if ok:
-                work.setdefault(("qbit_remove",), set()).update(ok)
+                         "what": L("Seeding rule for torrents from Radarr/Sonarr (torrents with their own limit are left alone)",
+                                   "Delingsregel for torrenter fra Radarr/Sonarr (torrenter med egen grense røres ikke)"),
+                         "before": _rule_text(cur), "after": _rule_text(new)})
+        return rows
+    if op in ("qbit_limits", "qbit_remove", "qbit_stop"):
+        from . import torrents
+        _, raw = st.qbit()
+        hashes = [h for h in ch.get("hashes") or [] if h in raw]
+        st.touched.update(hashes)
+        if not hashes:
+            return rows
+        if op == "qbit_limits":
+            mode = ch.get("mode") or "global"
+            vals = {"global": (-2, -2, -2), "none": (-1, -1, -1)}.get(mode)
+            if vals is None:
+                vals = (_opt(ch.get("ratio"), float, -1), _opt(ch.get("minutes"), int, -1), _opt(ch.get("inactive"), int, -1))
+            work.setdefault(("qbit_limits",), {})[vals] = sorted(set(work.get(("qbit_limits",), {}).get(vals, [])) | set(hashes))
+            what = {"global": L("use qBittorrent's global seeding limit", "bruk qBittorrents globale delingsgrense"),
+                    "none": L("no seeding limit", "ingen delingsgrense")}.get(mode) or L("their own seeding limit", "egen delingsgrense")
+            rows.append({"service": "qbittorrent", "area": "seeding",
+                         "what": fmt("{n} torrent(s): {w}", "{n} torrent(er): {w}", n=len(hashes), w=what)})
+            return rows
+        if op == "qbit_stop":
+            work.setdefault(("qbit_stop",), set()).update(hashes)
+            rows.append({"service": "qbittorrent", "area": "seeding",
+                         "what": fmt("Stop {n} torrent(s)", "Stopp {n} torrent(er)", n=len(hashes))})
+            return rows
+        files = bool(ch.get("files", True))
+        ctx = st.torrent_ctx()
+        entries = torrents._entries()
+        files_on = bool(settings.get()["actions"].get("files_enabled"))
+        for h in hashes:
+            t = torrents.classify(raw[h], entries, ctx)
+            reason = None
+            if not t["complete"]:
+                reason = L("still downloading", "lastes fortsatt ned")
+            elif t["class"] == "importing":
+                reason = L("Radarr/Sonarr is still importing it", "Radarr/Sonarr importerer den fortsatt")
+            elif files and t["class"] == "unknown":
+                reason = L("its files are not in a scanned downloads folder, so the app cannot check them – remove the torrent only",
+                           "filene ligger ikke i en skannet nedlastingsmappe, så appen kan ikke sjekke dem – fjern bare torrenten")
+            elif files and t["class"] in ("orphaned", "other") and not files_on:
+                reason = L("not in a library – deleting its files needs «Allow deleting files on disk»",
+                           "ikke i et bibliotek – å slette filene krever «Tillat sletting av filer på disk»")
+            if reason:
+                rows.append({"service": "qbittorrent", "area": "seeding", "skipped": True,
+                             "what": fmt("«{n}» kept: {r}", "«{n}» beholdes: {r}", n=t["name"], r=reason)})
+                continue
+            with_files = files and t["class"] != "error"
+            work.setdefault(("qbit_remove",), {})[h] = {"files": with_files, "name": t["name"], "freed": t["freed"] if with_files else 0}
+            if with_files and t["class"] == "imported":
+                what = fmt("Remove «{n}» with its downloaded files (the library copy stays)",
+                           "Fjern «{n}» med de nedlastede filene (kopien i biblioteket blir)", n=t["name"])
+            elif with_files:
+                what = fmt("Remove «{n}» and DELETE its files – they are not in any library",
+                           "Fjern «{n}» og SLETT filene – de finnes ikke i noe bibliotek", n=t["name"])
+            else:
+                what = fmt("Remove «{n}» from qBittorrent (the files stay)", "Fjern «{n}» fra qBittorrent (filene blir liggende)", n=t["name"])
+            rows.append({"service": "qbittorrent", "area": "seeding", "bytes": t["freed"] if with_files else 0, "what": what})
         return rows
     raise ActionError(fmt("Unknown change: {o}", "Ukjent endring: {o}", o=op))
+
+
+def _opt(v, typ, default=None):
+    if v is None or v == "":
+        return default
+    v = typ(v)
+    if v < 0:
+        raise ActionError(L("Limits cannot be negative", "Grenser kan ikke være negative"))
+    return v
+
+
+def _rule_text(r: dict) -> str:
+    if not r.get("enabled"):
+        return "–"
+    parts = []
+    if r.get("ratio") is not None:
+        parts.append(f"ratio {r['ratio']}")
+    if r.get("minutes") is not None:
+        parts.append(f"{r['minutes']} min")
+    if r.get("inactive") is not None:
+        parts.append(f"inactive {r['inactive']} min")
+    return " / ".join(parts) + " → stop"
 
 
 def _seerr_body(server: dict) -> dict:
@@ -790,6 +834,8 @@ def _limits_text(p: dict) -> str:
         parts.append(f"ratio {p.get('max_ratio')}")
     if p.get("max_seeding_time_enabled"):
         parts.append(f"{p.get('max_seeding_time')} min")
+    if p.get("max_inactive_seeding_time_enabled"):
+        parts.append(f"inactive {p.get('max_inactive_seeding_time')} min")
     act = {0: "stop", 1: "remove", 2: "super seeding", 3: "remove + files"}.get(p.get("max_ratio_act"), "?")
     return (" / ".join(parts) + f" → {act}") if parts else "–"
 
@@ -829,6 +875,9 @@ def _save_backup(st: _State, work: dict, changes: list[dict]) -> str:
             before["seerr"].append({"kind": key[1], "object": st.seerr[key[1]][key[2]]})
         elif kind == "qbit_prefs":
             before["qbit_prefs"] = {k: st.qbit_prefs.get(k) for k in work[key]}
+        elif kind == "seed_rule":
+            from . import torrents
+            before["seed_rule"] = torrents.rule()
     d = BACKUP_DIR()
     d.mkdir(parents=True, exist_ok=True)
     name = f"arr-setup-{time.strftime('%Y%m%d-%H%M%S')}.json"
@@ -897,24 +946,33 @@ def execute(changes: list[dict], token: str) -> dict:
                     q.set_preferences(o)
             run("qbittorrent", L("Seeding limits updated", "Delingsgrenser oppdatert"), prefs)
         elif kind == "qbit_limits":
-            def limits(hs=sorted(obj)):
+            for vals, hs in obj.items():
+                def limits(hs=hs, vals=vals):
+                    with qbit.Client(_qbit_cfg()) as q:
+                        q.set_share_limits(hs, *vals)
+                run("qbittorrent", fmt("Seeding limit changed on {n} torrent(s)", "Delingsgrense endret på {n} torrent(er)",
+                                       n=len(hs)), limits)
+        elif kind == "qbit_stop":
+            def stop(hs=sorted(obj)):
                 with qbit.Client(_qbit_cfg()) as q:
-                    q.set_share_limits(hs, -2, -2)
-            run("qbittorrent", fmt("Global seeding limit applied to {n} torrent(s)",
-                                   "Global delingsgrense brukt på {n} torrent(er)", n=len(obj)), limits)
+                    q.stop(hs)
+            run("qbittorrent", fmt("Stopped {n} torrent(s)", "Stoppet {n} torrent(er)", n=len(obj)), stop)
+        elif kind == "seed_rule":
+            def save_rule(o=obj):
+                settings.save({"seeding_rule": o})
+            run("qbittorrent", L("Seeding rule for Radarr/Sonarr saved", "Delingsregel for Radarr/Sonarr lagret"), save_rule)
     # Removing torrents last, one by one, so each is logged with its own size
-    if ("qbit_remove",) in work:
-        from . import downloads
-        entries = downloads.overview()["items"]
-        for h_ in sorted(work[("qbit_remove",)]):
-            t = st.qbit_torrents[h_]
-            e = _torrent_status(entries, t.get("content_path"))
-
-            def remove(hs=[h_]):
-                with qbit.Client(_qbit_cfg()) as q:
-                    q.delete(hs, delete_files=True)
-            run("qbittorrent", fmt("Removed «{n}» from qBittorrent with its files", "Fjernet «{n}» fra qBittorrent med filer",
-                                   n=t.get("name")), remove, bytes_=(e or {}).get("freed", 0))
+    for h_, info in sorted((work.get(("qbit_remove",)) or {}).items()):
+        def remove(hs=[h_], files=info["files"]):
+            with qbit.Client(_qbit_cfg()) as q:
+                q.delete(hs, delete_files=files)
+        what = (fmt("Removed «{n}» from qBittorrent with its files", "Fjernet «{n}» fra qBittorrent med filer", n=info["name"])
+                if info["files"] else
+                fmt("Removed «{n}» from qBittorrent (files kept)", "Fjernet «{n}» fra qBittorrent (filene beholdt)", n=info["name"]))
+        run("qbittorrent", what, remove, bytes_=info["freed"])
+    if ("seed_rule",) in work:
+        from . import torrents
+        torrents.apply_rule_safely()
     if backup and created:
         path = BACKUP_DIR() / backup
         data = json.loads(path.read_text("utf-8"))
@@ -940,7 +998,8 @@ def backups() -> list[dict]:
         b = data.get("before", {})
         out.append({"name": f.name, "ts": data.get("ts"), "changes": len(data.get("changes") or []),
                     "objects": len(b.get("definitions") or {}) + len(b.get("profiles") or []) + len(b.get("clients") or [])
-                    + len(b.get("seerr") or []) + (1 if b.get("qbit_prefs") else 0) + len(b.get("created") or [])})
+                    + len(b.get("seerr") or []) + (1 if b.get("qbit_prefs") else 0) + (1 if b.get("seed_rule") else 0)
+                    + len(b.get("created") or [])})
     return out
 
 
@@ -998,6 +1057,10 @@ def restore(name: str) -> dict:
         o = s_["object"]
         run("seerr", fmt("Seerr «{s}» restored", "Seerr «{s}» gjenopprettet", s=o.get("name")),
             lambda b_=base, h=h, o=o, k=s_["kind"]: _send("seerr", "PUT", f"{b_}/api/v1/settings/{k}/{o['id']}", h, body=_seerr_body(o)))
+    if b.get("seed_rule"):
+        def rule_back(o=b["seed_rule"]):
+            settings.save({"seeding_rule": o})
+        run("qbittorrent", L("Seeding rule restored", "Delingsregel gjenopprettet"), rule_back)
     if b.get("qbit_prefs"):
         def prefs(o=b["qbit_prefs"]):
             with qbit.Client(_qbit_cfg()) as q:

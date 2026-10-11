@@ -60,11 +60,20 @@ class Client:
     def torrents(self) -> list[dict]:
         return self._call("GET", "torrents/info").json()
 
-    def set_share_limits(self, hashes: list[str], ratio: float, seeding_minutes: int) -> None:
-        # -2 = use the global limit, -1 = no limit. qBittorrent 5 requires inactiveSeedingTimeLimit.
+    def set_share_limits(self, hashes: list[str], ratio: float, seeding_minutes: int, inactive_minutes: int = -2) -> None:
+        # -2 = use the global limit, -1 = no limit. qBittorrent 4.6+/5 also takes inactiveSeedingTimeLimit.
         self._call("POST", "torrents/setShareLimits", data={
             "hashes": "|".join(hashes), "ratioLimit": ratio, "seedingTimeLimit": seeding_minutes,
-            "inactiveSeedingTimeLimit": -2})
+            "inactiveSeedingTimeLimit": inactive_minutes})
+
+    def stop(self, hashes: list[str]) -> None:
+        """«Stop» in qBittorrent 5, «Pause» in 4.x."""
+        try:
+            self._call("POST", "torrents/stop", data={"hashes": "|".join(hashes)})
+        except ServiceError as e:
+            if getattr(e, "code", None) != 404:
+                raise
+            self._call("POST", "torrents/pause", data={"hashes": "|".join(hashes)})
 
     def delete(self, hashes: list[str], delete_files: bool) -> None:
         self._call("POST", "torrents/delete", data={"hashes": "|".join(hashes),

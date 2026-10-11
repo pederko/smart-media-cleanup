@@ -72,6 +72,9 @@ DEFAULTS: dict[str, Any] = {
     "sync": {"interval_hours": 6},
     "updates": {"check": True},
     "actions": {"enabled": False, "files_enabled": False},
+    # Seeding limit the app keeps on torrents from Radarr/Sonarr (only those that use qBittorrent's
+    # global limit). Off until switched on from the Torrents page. None = no limit of that kind.
+    "seeding_rule": {"enabled": False, "ratio": 1.0, "minutes": 1440, "inactive": None},
 }
 
 ENV_MAP = {
