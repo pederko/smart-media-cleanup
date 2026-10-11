@@ -17,10 +17,10 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import actions, db, jobs, posters, settings, sync, updates
+from . import actions, db, jobs, posters, settings, sync, updates, views
 from .analysis import engine
 
-VERSION = os.environ.get("SMC_VERSION", "0.5.0")
+VERSION = os.environ.get("SMC_VERSION", "0.6.0")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -37,6 +37,8 @@ async def lifespan(_app):
                 jobs.enqueue("refresh")
     yield
 
+
+logging.getLogger("httpx").setLevel(logging.WARNING)  # ikke logg hvert API-kall
 
 app = FastAPI(title="Smart Media Cleanup", version=VERSION, docs_url="/api/docs", openapi_url="/api/openapi.json",
               lifespan=lifespan)
@@ -407,6 +409,19 @@ def requesters():
                 e["never_watched_bytes"] += t["alloc"] or 0
     items = sorted(out.values(), key=lambda e: -e["bytes"])
     return {"items": items, "seerr": last_sync}
+
+
+@app.get("/api/library/{kind}")
+def library(kind: str, view: str = "all", q: str = "", sort: str = "score", order: str = "desc",
+            limit: int = 100, offset: int = 0):
+    if kind not in ("movie", "series"):
+        raise HTTPException(404, "Ukjent bibliotektype")
+    return views.library(kind, view, q, sort, order, limit, offset)
+
+
+@app.get("/api/requesters/{name}")
+def requester_detail(name: str, view: str = "all", sort: str = "requested", order: str = "desc"):
+    return views.requester(name, view, sort, order)
 
 
 @app.get("/api/duplicates")

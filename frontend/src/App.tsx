@@ -6,10 +6,14 @@ import OverviewPage from "./pages/Overview";
 import SuggestionsPage from "./pages/Suggestions";
 import { DuplicatesPage, FilesPage, TitlesPage } from "./pages/Lists";
 import SettingsPage, { JobsPage, LogPage } from "./pages/Settings";
+import { LibraryPage, UserPage, UsersPage } from "./pages/Library";
 
 const ROUTES: { id: string; label: string }[] = [
   { id: "", label: "Oversikt" },
   { id: "forslag", label: "Forslag" },
+  { id: "filmer", label: "Filmer" },
+  { id: "serier", label: "Serier" },
+  { id: "brukere", label: "Brukere" },
   { id: "titler", label: "Titler" },
   { id: "duplikater", label: "Duplikater" },
   { id: "filer", label: "Største filer" },
@@ -77,7 +81,12 @@ export default function App() {
   const svcBad = status ? Object.entries(status.services ?? {}).filter(([, v]) => !v.ok && v.configured !== false).length : 0;
 
   let page;
-  switch (route) {
+  const [section, ...rest] = route.split("/");
+  const param = rest.length ? decodeURIComponent(rest.join("/")) : "";
+  switch (section) {
+    case "filmer": page = <LibraryPage kind="movie" />; break;
+    case "serier": page = <LibraryPage kind="series" />; break;
+    case "brukere": page = param ? <UserPage name={param} /> : <UsersPage />; break;
     case "forslag": page = <SuggestionsPage />; break;
     case "titler": page = <TitlesPage />; break;
     case "duplikater": page = <DuplicatesPage />; break;
@@ -96,7 +105,7 @@ export default function App() {
             <div className="brand">Lagringsrydding<small>TrueNAS medieanalyse</small></div>
             <div className="nav">
               {ROUTES.map((r) => (
-                <a key={r.id} href={`#/${r.id}`} aria-current={route === r.id ? "page" : undefined}>
+                <a key={r.id} href={`#/${r.id}`} aria-current={section === r.id ? "page" : undefined}>
                   {r.label}
                   {r.id === "innstillinger" && svcBad > 0 && <span className="count">{svcBad} feil</span>}
                   {r.id === "jobber" && running && <span className="count">kjører</span>}

@@ -97,7 +97,7 @@ export default function OverviewPage({ go }: { go: (h: string) => void }) {
                 <tbody>
                   {req.data.items.slice(0, 10).map((r) => (
                     <tr key={r.name}>
-                      <td><a href={`#/forslag?etterspurt=${encodeURIComponent(r.name)}`}>{r.name}</a></td>
+                      <td><a href={`#/brukere/${encodeURIComponent(r.name)}`}>{r.name}</a></td>
                       <td className="r">{r.titles}</td>
                       <td className="r num">{bytes(r.bytes)}</td>
                       <td className="r num">{r.not_watched_by_requester} <span className="faint">({bytes(r.not_watched_bytes)})</span></td>

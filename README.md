@@ -34,7 +34,9 @@ Skrivebeskyttet analyse av mediebiblioteket på TrueNAS SCALE. Appen kobler file
 - **Utvalg:** huk av forslag og se samlet gevinst. Overlapp (for eksempel en serie og en av sesongene) og hardlinker telles riktig.
 - **Duplikater:** tre kategorier holdes adskilt – identiske kopier, alternative versjoner og hardlenker (som ikke er duplikater).
 - **Titler og største filer:** oppslag og sortering for 4K-remuxer, ISO-filer og store episoder.
-- **Seerr:** hvem som ba om hver tittel, og om de har sett den selv. Filtrer forslag på «Etterspurt av», og se plassbruk per bruker på oversikten.
+- **Filmer og Serier:** egne sider med oppsummering øverst – hva som aldri er sett, ikke sett på lenge, trygge slettinger – og en liste som kan filtreres og sorteres på størrelse, seing, anbefaling og gevinst.
+- **Brukere (Seerr):** hvem som ba om hva, og om de har sett det selv. Egen side per bruker med oppsummering og filter for det de ikke har sett.
+- **Sletting (valgfritt):** filmer, serier og enkeltsesonger slettes via Radarr/Sonarr etter en oppsummering. Av som standard.
 
 Forslagstyper:
 

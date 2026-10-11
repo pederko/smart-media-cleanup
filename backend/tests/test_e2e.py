@@ -298,6 +298,33 @@ def test_posters_from_plex_cached_and_radarr_fallback(client):
 
 
 
+def test_library_views(client):
+    r = client.get("/api/library/movie", params={"sort": "score"}).json()
+    s = r["summary"]
+    assert s["count"] == 8 and s["never"]["count"] >= 3 and s["freed"] > 0
+    assert any(a["kind"] == "delete_title" for a in s["actions"])
+    assert r["items"][0]["best"]["score"] >= r["items"][-1]["best"]["score"] if r["items"][-1]["best"] else True
+    big = next(i for i in r["items"] if i["name"] == "Big Movie")
+    assert big["delete_id"] and big["best"]["kind"] == "delete_title"
+    never = client.get("/api/library/movie", params={"view": "never"}).json()
+    assert all(not i["play_count"] for i in never["items"])
+    prot = client.get("/api/library/movie", params={"view": "protected"}).json()
+    assert {i["name"] for i in prot["items"]} == {"Kids Movie", "Keeper"}
+    tv = client.get("/api/library/series", params={"sort": "size"}).json()
+    assert tv["summary"]["count"] == 2 and tv["items"][0]["name"] == "Hot Show"
+    assert client.get("/api/library/musikk").status_code == 404
+
+
+def test_requester_page(client):
+    r = client.get("/api/requesters/Bjørn B.").json()
+    s = r["summary"]
+    assert s["count"] == 2 and s["unwatched_by_user"]["count"] == 2 and s["movies"]["count"] == 1
+    assert s["unwatched_delete"]["count"] == 2 and s["unwatched_delete"]["freed"] > 0
+    anna = client.get("/api/requesters/Anna", params={"view": "unwatched"}).json()
+    assert [i["name"] for i in anna["items"]] == ["Kids Movie"] and anna["items"][0]["protected"]
+    assert anna["summary"]["unwatched_delete"]["count"] == 0  # beskyttet tas ikke med
+
+
 # ------------------------------------------------------------------ sletting (kjøres sist)
 
 def _sid(name, kind, scope=None):

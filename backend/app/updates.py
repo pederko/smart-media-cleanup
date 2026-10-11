@@ -19,7 +19,7 @@ CHECK_EVERY = 6 * 3600
 
 
 def current_version() -> str:
-    return os.environ.get("SMC_VERSION", "0.5.0")
+    return os.environ.get("SMC_VERSION", "0.6.0")
 
 
 def parse(v: str | None) -> tuple[int, int, int] | None:

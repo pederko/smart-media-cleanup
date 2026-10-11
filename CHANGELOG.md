@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.6.0
+- Nye sider **Filmer** og **Serier**: oppsummering øverst (hvor mye som brukes, hva som aldri er sett eller ikke sett på lenge, trygge slettinger, 4K), forslag fordelt på type, «Bør ses på først» med plakater, og en filtrer- og sorterbar liste med anbefaling per tittel.
+- Ny side **Brukere** med alle som har bedt om noe i Seerr, og en egen side per bruker: hva de har bedt om, hva de har sett selv, hva ingen har sett, og hvor mye som frigjøres ved å fjerne det de ikke har sett. Filtre for «Ikke sett av brukeren», «over 12 måneder» og «Ikke sett av noen».
+- Velg titler direkte fra disse sidene og slett dem (når sletting er slått på).
+- Mindre støy i loggen: API-kall logges ikke lenger enkeltvis.
+
 ## 0.5.0
 - Sletting via Radarr og Sonarr (av som standard, slås på under Innstillinger → Sletting): hele filmer, hele serier og enkeltsesonger (avovervåkes før filene slettes).
 - Oppsummering før sletting med plass som frigjøres og hva som ikke tas med, og hvorfor. Én bekreftelsesknapp.
