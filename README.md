@@ -94,10 +94,34 @@ docker build -t smart-media-cleanup:0.2.0 /mnt/pool1/apps/mediacleanup/src
 
 ### 4. Installer appen
 
-1. Apps → Discover Apps → pilen ved **Custom App** → **Install via YAML**.
-2. Navn: `mediacleanup`.
-3. Lim inn innholdet i [`deploy/truenas-app.yaml`](deploy/truenas-app.yaml).
-4. Lagre. TrueNAS henter imaget, og appen starter på **http://<truenas-ip>:30480**.
+Bruk **Install via YAML**, ikke skjemaet «Install iX App» (det med felter for Repository, Tag, Hostname osv.):
+
+1. Apps → **Discover Apps**.
+2. Øverst til høyre: klikk pilen/menyen ved siden av **Custom App** og velg **Install via YAML**.
+3. **Name:** `mediacleanup`.
+4. **Custom Config:** lim inn hele [`deploy/truenas-app.yaml`](deploy/truenas-app.yaml).
+5. **Save.** TrueNAS henter imaget og starter appen på **http://<truenas-ip>:30480**.
+
+<details><summary>Foretrekker du skjemaet «Install iX App»? Slik fylles det ut</summary>
+
+| Seksjon | Felt | Verdi |
+|---|---|---|
+| Application name | Name | `mediacleanup` |
+| Image Configuration | Repository | `ghcr.io/pederko/smart-media-cleanup` |
+| | Tag | `0.2.0` |
+| Container Configuration | Timezone | `Europe/Oslo` |
+| Security Context | Privileged | av |
+| | Custom User | på, User ID `568`, Group ID `568` |
+| Network Configuration | Ports | Container port `8000`, Host port `30480`, TCP |
+| Storage Configuration | Host Path | `/mnt/pool1/apps/mediacleanup/data` → `/data` |
+| | Host Path, Read Only | `/mnt/pool1/FILM` → `/media/FILM` |
+| | Host Path, Read Only | `/mnt/pool1/TV` → `/media/TV` |
+| | Host Path, Read Only | `/mnt/pool1/Barn` → `/media/Barn` |
+| | Host Path, Read Only | `/mnt/pool1/tmp` → `/media/tmp` |
+| Resources | Limits | 1 CPU, 1024 MB (valgfritt) |
+
+Resten kan stå som standard. YAML-veien gir i tillegg skrivebeskyttet rotfilsystem og fjernede Linux-capabilities.
+</details>
 
 ### 5. Legg til i Homarr (valgfritt)
 
