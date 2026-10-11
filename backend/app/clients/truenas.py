@@ -1,7 +1,7 @@
-"""TrueNAS middleware (valgfritt) via JSON-RPC 2.0 over WebSocket (/api/current, 25.04+).
+"""TrueNAS middleware (optional) via JSON-RPC 2.0 over WebSocket (/api/current, 25.04+).
 
-Brukes kun til lesing: pool-kapasitet, datasett og antall snapshots på rotdatasettet.
-Bruk en API-nøkkel knyttet til en bruker med rollen «Read-Only Admin».
+Read only: pool capacity, datasets and the number of snapshots on the root dataset.
+Use an API key tied to a user with the «Read-Only Admin» role.
 """
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import json
 import ssl
 from typing import Any
 
+from ..i18n import L, fmt
 from .base import ServiceError
 
 
@@ -18,10 +19,10 @@ class _RPC:
         try:
             from websockets.sync.client import connect
         except ImportError as e:  # pragma: no cover
-            raise ServiceError("websockets-biblioteket mangler") from e
+            raise ServiceError("The websockets library is missing") from e
         url = cfg.get("url", "").rstrip("/")
         if not url or not cfg.get("api_key"):
-            raise ServiceError("URL eller API-nøkkel mangler")
+            raise ServiceError(L("URL or API key is missing", "URL eller API-nøkkel mangler"))
         ws_url = url.replace("https://", "wss://").replace("http://", "ws://") + "/api/current"
         ctx = None
         if ws_url.startswith("wss://"):
@@ -32,11 +33,11 @@ class _RPC:
         try:
             self.ws = connect(ws_url, ssl=ctx, open_timeout=10, close_timeout=5, max_size=2**24)
         except Exception as e:
-            raise ServiceError(f"Ingen kontakt med TrueNAS: {e}") from e
+            raise ServiceError(fmt("No connection to TrueNAS: {e}", "Ingen kontakt med TrueNAS: {e}", e=e)) from e
         self.ids = itertools.count(1)
         if self.call("auth.login_with_api_key", [cfg["api_key"]]) is not True:
             self.close()
-            raise ServiceError("TrueNAS avviste API-nøkkelen")
+            raise ServiceError(L("TrueNAS refused the API key", "TrueNAS avviste API-nøkkelen"))
 
     def call(self, method: str, params: list | None = None) -> Any:
         mid = next(self.ids)
@@ -44,7 +45,7 @@ class _RPC:
         while True:
             msg = json.loads(self.ws.recv(timeout=60))
             if msg.get("id") != mid:
-                continue  # hendelser/varsler
+                continue  # events/notifications
             if "error" in msg:
                 err = msg["error"]
                 raise ServiceError(f"{method}: {err.get('message') or err}")
@@ -63,10 +64,20 @@ def _parsed(v):
     return v
 
 
+def _guess_pool() -> str:
+    """The pool behind the first library (/mnt/<pool>/...), unless a dataset is configured."""
+    from .. import settings
+    for lib in settings.get()["libraries"]:
+        parts = (lib.get("host_path") or "").strip("/").split("/")
+        if len(parts) >= 2 and parts[0] == "mnt":
+            return parts[1]
+    raise ServiceError(L("Set the pool or dataset under Settings → TrueNAS", "Angi pool eller datasett under Innstillinger → TrueNAS"))
+
+
 def fetch(cfg: dict) -> dict:
     rpc = _RPC(cfg)
     try:
-        ds_name = cfg.get("dataset") or "pool1"
+        ds_name = cfg.get("dataset") or _guess_pool()
         pool_name = ds_name.split("/")[0]
         pools = rpc.call("pool.query", [[["name", "=", pool_name]]]) or []
         pool = pools[0] if pools else {}

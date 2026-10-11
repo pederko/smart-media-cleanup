@@ -1,7 +1,7 @@
-"""Sammensatte visninger: bibliotek (filmer/serier) og Seerr-brukere.
+"""Composite views: library (movies/series), Seerr users, the quality overview and «Other» storage.
 
-Datamengden er noen tusen titler, så filtrering/sortering gjøres i Python over ferdige
-analyseresultater – enkelt å lese og raskt nok.
+The data is a few thousand titles, so filtering/sorting happens in Python over the finished
+analysis results – easy to read and fast enough.
 """
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import time
 from collections import defaultdict
 
 from . import db, settings
+from .i18n import L
 from .analysis import engine
 
 MONTH = 30.44 * 86400
@@ -44,7 +45,7 @@ def _titles(c, kind: str | None = None, requester: str | None = None) -> list[di
 
 def _suggestions_by_title(c, keys: list[str] | None = None) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = defaultdict(list)
-    for s in db.rows(c, "SELECT id, kind, title_key, scope, action, label, score, risk, savings FROM suggestions "
+    for s in db.rows(c, "SELECT id, kind, title_key, scope, action, label, name, score, risk, savings FROM suggestions "
                         "WHERE title_key IS NOT NULL ORDER BY score DESC"):
         if keys is None or s["title_key"] in keys:
             out[s["title_key"]].append(s)
@@ -72,7 +73,7 @@ def _match(t: dict, view: str) -> bool:
     if view == "never":
         return not t["play_count"]
     if view == "low_risk":
-        return bool(t["best"]) and t["best"]["kind"] == "delete_title" and t["best"]["risk"] == "lav"
+        return bool(t["best"]) and t["best"]["kind"] == "delete_title" and t["best"]["risk"] == "low"
     if view.startswith("stale"):
         n = int(view[5:])
         return bool(t["play_count"]) and m is not None and m >= n
@@ -98,7 +99,7 @@ SORTS = {
 }
 
 
-def library(kind: str, view: str = "all", q: str = "", sort: str = "score", order: str = "desc",
+def library(kind: str | None, view: str = "all", q: str = "", sort: str = "score", order: str = "desc",
             limit: int = 100, offset: int = 0) -> dict:
     s = settings.get()
     min_score = s["analysis"]["min_score"]
@@ -109,7 +110,7 @@ def library(kind: str, view: str = "all", q: str = "", sort: str = "score", orde
         for t in titles:
             _attach(t, by_title.get(t["key"], []), min_score)
 
-        # ---------- oppsummering (uavhengig av filter)
+        # ---------- summary (independent of the filter)
         def agg(items):
             return {"count": len(items), "bytes": sum(t["alloc"] or 0 for t in items)}
         never = [t for t in titles if not t["play_count"]]
@@ -131,9 +132,9 @@ def library(kind: str, view: str = "all", q: str = "", sort: str = "score", orde
                 sv = engine.selection_savings(c, ids_by_kind[k])
                 actions.append({"kind": k, "count": len(ids_by_kind[k]), "freed": sv["freed"]})
         total = engine.selection_savings(c, all_ids)["freed"] if all_ids else 0
-        # Sikre slettinger: aldri sett / ikke sett på lenge, lav risiko
+        # Safe deletions: never / long unwatched, low risk
         low = [sg["id"] for t in titles for sg in by_title.get(t["key"], [])
-               if sg["kind"] == "delete_title" and sg["risk"] == "lav" and sg["score"] >= min_score]
+               if sg["kind"] == "delete_title" and sg["risk"] == "low" and sg["score"] >= min_score]
         low_freed = engine.selection_savings(c, low)["freed"] if low else 0
         top = sorted((t for t in suggested if (t["best"]["savings"] or 0) > 0), key=lambda t: -t["best"]["score"])[:6]
         summary = {
@@ -146,7 +147,7 @@ def library(kind: str, view: str = "all", q: str = "", sort: str = "score", orde
             "top": [_slim(t) for t in top], "min_score": min_score,
         }
 
-    # ---------- liste
+    # ---------- list
     items = [t for t in titles if _match(t, view)]
     if q:
         ql = q.lower()
@@ -216,10 +217,10 @@ def requester(name: str, view: str = "all", sort: str = "requested", order: str 
     return {"summary": summary, "total": len(out), "items": out}
 
 
-# ------------------------------------------------------------------ «Annet» på oversikten
+# ------------------------------------------------------------------ «Other» storage on the overview
 
 def other_storage() -> dict:
-    """Hva som bruker plass i poolen utenfor bibliotekene. Bare lesing – appen har ikke tilgang hit."""
+    """What uses space in the pool outside the libraries. Read only – the app has no access there."""
     s = settings.get()
     with db.conn() as c:
         tn = db.kv_get(c, "truenas") or {}
@@ -230,7 +231,8 @@ def other_storage() -> dict:
     libs_total = sum(l["alloc"] for l in libs)
     if not datasets:
         return {"available": False, "libs_total": libs_total, "pool": pool,
-                "message": "Koble til TrueNAS under Innstillinger (API-nøkkel med rollen Read-Only Admin) for å se hva «Annet» består av."}
+                "message": L("Connect TrueNAS under Settings (an API key with the Read-Only Admin role) to see what «Other» consists of.",
+                             "Koble til TrueNAS under Innstillinger (API-nøkkel med rollen Read-Only Admin) for å se hva «Annet» består av.")}
 
     def owner(path: str) -> str | None:
         best = None
@@ -268,11 +270,11 @@ def other_storage() -> dict:
 def _ds_kind(name: str) -> str:
     n = name.lower()
     if ".ix-apps" in n or "ix-applications" in n or "ix-apps" in n:
-        return "TrueNAS-apper (images og containere)"
-    if "frigate" in n or "recording" in n or "nvr" in n:
-        return "Opptak"
-    if "app-config" in n or "/apps" in n or "appdata" in n:
-        return "Appdata og innstillinger"
+        return L("TrueNAS apps (images and containers)", "TrueNAS-apper (images og containere)")
+    if any(w in n for w in ("frigate", "recording", "nvr", "cctv", "camera")):
+        return L("Recordings", "Opptak")
+    if any(w in n for w in ("config", "/apps", "appdata", "docker")):
+        return L("App data and settings", "Appdata og innstillinger")
     if "/" not in n:
-        return "Rotdatasettet"
+        return L("The root dataset", "Rotdatasettet")
     return ""

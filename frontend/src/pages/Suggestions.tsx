@@ -1,14 +1,17 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { api, qs, Requester, Savings, Suggestion } from "../api";
-import { bytes, KIND_LABEL, num } from "../format";
-import { ErrorNote, HistoryLine, RequestedBy, RiskPill, ScoreMeter, useFetch, useOpenTitle, useRefreshTick, Poster } from "../components/common";
+import { bytes, kindLabel, num } from "../format";
+import { t } from "../i18n";
+import { ErrorNote, HistoryLine, PageHeader, Poster, RequestedBy, RiskPill, ScoreMeter, Seg, Tray, useFetch, useOpenTitle, useRefreshTick, useStatus } from "../components/common";
 import SuggestionDetail from "../components/SuggestionDetail";
 import DeleteDialog from "../components/DeleteDialog";
 
-type ListResp = { total: number; items: Suggestion[]; filtered_savings: Savings };
-type SelResp = Savings & { items: { id: string; label: string; location: string; savings: number; risk: string; kind: string }[] };
+type ListResp = { total: number; items: Suggestion[]; filtered_savings: Savings; min_score: number; recommended_score: number };
+type SelResp = Savings & { items: { id: string; kind: string }[] };
 
 const STORE = "smc.selection";
+const KINDS = ["delete_title", "delete_season", "replace", "remove_versions", "remove_copy", "download"];
+const DELETABLE = new Set(["delete_title", "delete_season"]);
 
 function hashParam(name: string): string {
   const q = window.location.hash.split("?")[1] ?? "";
@@ -22,11 +25,13 @@ function loadSel(): string[] {
 export default function SuggestionsPage() {
   const tick = useRefreshTick();
   const openTitle = useOpenTitle();
+  const status = useStatus();
+  const [scope, setScope] = useState<"recommended" | "all">(() => (hashParam("all") ? "all" : "recommended"));
   const [q, setQ] = useState("");
-  const [kind, setKind] = useState("");
+  const [kind, setKind] = useState(() => hashParam("kind"));
   const [risk, setRisk] = useState("");
   const [library, setLibrary] = useState("");
-  const [requester, setRequester] = useState(() => hashParam("etterspurt"));
+  const [requester, setRequester] = useState(() => hashParam("by"));
   const [minScore, setMinScore] = useState<string>("");
   const [sort, setSort] = useState("score");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
@@ -34,26 +39,23 @@ export default function SuggestionsPage() {
   const [open, setOpen] = useState<string | null>(null);
   const [sel, setSel] = useState<string[]>(loadSel);
   const [selInfo, setSelInfo] = useState<SelResp | null>(null);
-  const [summary, setSummary] = useState(false);
   const [deleting, setDeleting] = useState<string[] | null>(null);
-  const status = useFetch<{ actions_enabled: boolean }>("/api/status", [tick]);
-  const canDelete = !!status.data?.actions_enabled;
-  const DELETABLE = new Set(["delete_title", "delete_season"]);
   const [debounced, setDebounced] = useState("");
 
-  useEffect(() => { const t = setTimeout(() => setDebounced(q), 250); return () => clearTimeout(t); }, [q]);
-  const url = `/api/suggestions${qs({ q: debounced, kind, risk, library, requested_by: requester, min_score: minScore, sort, order, limit })}`;
+  useEffect(() => { const x = setTimeout(() => setDebounced(q), 250); return () => clearTimeout(x); }, [q]);
+  const url = `/api/suggestions${qs({ q: debounced, kind, risk, library, requested_by: requester, min_score: minScore,
+    recommended: scope === "recommended", sort, order, limit })}`;
   const requesters = useFetch<{ items: Requester[] }>("/api/requesters", [tick]);
   const { data, error, loading } = useFetch<ListResp>(url, [tick]);
-  const settings = useFetch<{ analysis: { min_score: number }; libraries: { name: string }[] }>("/api/settings");
+  const settings = useFetch<{ libraries: { name: string }[] }>("/api/settings");
 
   useEffect(() => {
-    try { localStorage.setItem(STORE, JSON.stringify(sel)); } catch { /* privat modus */ }
+    try { localStorage.setItem(STORE, JSON.stringify(sel)); } catch { /* private mode */ }
     if (!sel.length) { setSelInfo(null); return; }
     api.post<SelResp>("/api/selection", { ids: sel }).then(setSelInfo).catch(() => setSelInfo(null));
   }, [sel, tick]);
 
-  // Fjern valg som ikke lenger finnes etter ny analyse
+  // Drop selections that no longer exist after a new analysis
   useEffect(() => {
     if (selInfo && selInfo.items.length < sel.length) {
       const ok = new Set(selInfo.items.map((i) => i.id));
@@ -76,46 +78,58 @@ export default function SuggestionsPage() {
   );
   const visibleIds = data?.items.map((s) => s.id) ?? [];
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selSet.has(id));
-  const defaultMin = settings.data?.analysis.min_score;
+  const selDeletable = selInfo?.items.filter((i) => DELETABLE.has(i.kind)).length ?? 0;
 
   return (
     <>
-      <h1>Oppryddingsforslag</h1>
-      <p className="lede">Rangert etter prioritet. Åpne en rad for å se nøyaktig hvordan poengene er regnet ut, hvilke filer som berøres og hva det betyr for Radarr, Sonarr og Plex. Ingenting slettes herfra.</p>
+      <PageHeader title={t("Suggestions", "Forslag")}
+        lede={t("Ranked by priority. Open a row to see exactly how the points were calculated, which files are affected and what it means for Radarr, Sonarr and Plex.",
+          "Rangert etter prioritet. Åpne en rad for å se nøyaktig hvordan poengene er regnet ut, hvilke filer som berøres og hva det betyr for Radarr, Sonarr og Plex.")}>
+        <a className="btn small" href={`/api/export/suggestions.csv${qs({ min_score: data?.min_score })}`}>{t("Export CSV", "Eksporter CSV")}</a>
+      </PageHeader>
 
       <div className="toolbar">
-        <input type="search" placeholder="Søk i tittel eller sti" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Søk" />
-        <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Type">
-          <option value="">Alle typer</option>
-          {Object.entries(KIND_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        <Seg label={t("Scope", "Utvalg")} value={scope} onChange={(v) => setScope(v)} options={[
+          { value: "recommended", label: t("Recommended", "Anbefalt") },
+          { value: "all", label: t("All", "Alle") },
+        ]} />
+        <input type="search" placeholder={t("Search title or path", "Søk i tittel eller sti")} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t("Search", "Søk")} />
+        <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label={t("Type", "Type")}>
+          <option value="">{t("All types", "Alle typer")}</option>
+          {KINDS.map((k) => <option key={k} value={k}>{kindLabel(k)}</option>)}
         </select>
-        <div className="seg" role="group" aria-label="Risiko">
-          {[["", "Alle"], ["lav", "Lav"], ["middels", "Middels"], ["høy", "Høy"]].map(([v, l]) => (
-            <button key={v} aria-pressed={risk === v} onClick={() => setRisk(v)}>{l}</button>
-          ))}
-        </div>
-        <select value={library} onChange={(e) => setLibrary(e.target.value)} aria-label="Bibliotek">
-          <option value="">Alle bibliotek</option>
+        <Seg label={t("Risk", "Risiko")} value={risk} onChange={setRisk} options={[
+          { value: "", label: t("Any risk", "All risiko") }, { value: "low", label: t("Low", "Lav") },
+          { value: "medium", label: t("Medium", "Middels") }, { value: "high", label: t("High", "Høy") },
+        ]} />
+        <select value={library} onChange={(e) => setLibrary(e.target.value)} aria-label={t("Library", "Bibliotek")}>
+          <option value="">{t("All libraries", "Alle bibliotek")}</option>
           {settings.data?.libraries.map((l) => <option key={l.name} value={l.name}>{l.name}</option>)}
         </select>
         {requesters.data && requesters.data.items.length > 0 && (
-          <select value={requester} onChange={(e) => setRequester(e.target.value)} aria-label="Etterspurt av">
-            <option value="">Alle forespørsler</option>
-            {requesters.data.items.map((r) => <option key={r.name} value={r.name}>Etterspurt av {r.name} ({r.titles})</option>)}
+          <select value={requester} onChange={(e) => setRequester(e.target.value)} aria-label={t("Requested by", "Etterspurt av")}>
+            <option value="">{t("All requests", "Alle forespørsler")}</option>
+            {requesters.data.items.map((r) => <option key={r.name} value={r.name}>{t("Requested by", "Etterspurt av")} {r.name} ({r.titles})</option>)}
           </select>
         )}
-        <label className="check small">Min. prioritet
-          <input type="number" min={0} max={100} placeholder={defaultMin != null ? String(defaultMin) : ""} value={minScore} onChange={(e) => setMinScore(e.target.value)} />
-        </label>
-        <a className="btn small" href={`/api/export/suggestions.csv${qs({ min_score: minScore || defaultMin })}`}>Eksporter CSV</a>
+        {scope === "all" && (
+          <label className="check small">{t("Min. priority", "Min. prioritet")}
+            <input type="number" min={0} max={100} placeholder={data ? String(data.min_score) : ""} value={minScore} onChange={(e) => setMinScore(e.target.value)} />
+          </label>
+        )}
       </div>
 
       <ErrorNote error={error} />
       {data && (
         <p className="small muted">
-          {num(data.total)} forslag. Frigjør til sammen {bytes(data.filtered_savings.freed)} uten dobbelttelling
-          {data.filtered_savings.naive_sum && data.filtered_savings.naive_sum > data.filtered_savings.freed ? ` (summen av radene er ${bytes(data.filtered_savings.naive_sum)} fordi noen forslag overlapper)` : ""}.
-          {loading && " Oppdaterer…"}
+          {scope === "recommended"
+            ? t(`${num(data.total)} recommended suggestions (priority ≥ ${data.recommended_score}, not high risk) free ${bytes(data.filtered_savings.freed)} without double counting.`,
+              `${num(data.total)} anbefalte forslag (prioritet ≥ ${data.recommended_score}, ikke høy risiko) frigjør ${bytes(data.filtered_savings.freed)} uten dobbelttelling.`)
+            : t(`${num(data.total)} suggestions free ${bytes(data.filtered_savings.freed)} without double counting.`,
+              `${num(data.total)} forslag frigjør ${bytes(data.filtered_savings.freed)} uten dobbelttelling.`)}
+          {data.filtered_savings.naive_sum && data.filtered_savings.naive_sum > data.filtered_savings.freed
+            ? t(` (The rows add up to ${bytes(data.filtered_savings.naive_sum)} because some overlap.)`, ` (Radene summerer til ${bytes(data.filtered_savings.naive_sum)} fordi noen overlapper.)`) : ""}
+          {loading && t(" Updating…", " Oppdaterer…")}
         </p>
       )}
 
@@ -124,96 +138,79 @@ export default function SuggestionsPage() {
           <thead>
             <tr>
               <th style={{ width: 36 }}>
-                <input type="checkbox" aria-label="Velg alle synlige" checked={allVisibleSelected}
+                <input type="checkbox" aria-label={t("Select all visible", "Velg alle synlige")} checked={allVisibleSelected}
                   onChange={() => setSel((s) => allVisibleSelected ? s.filter((id) => !visibleIds.includes(id)) : [...new Set([...s, ...visibleIds])])} />
               </th>
-              {th("score", "Prioritet")}
-              {th("name", "Tittel")}
-              <th>Handling</th>
-              {th("last_played", "Seing")}
-              {th("risk", "Risiko")}
-              {th("savings", "Frigjøres", true)}
+              {th("score", t("Priority", "Prioritet"))}
+              {th("name", t("Title", "Tittel"))}
+              <th>{t("Action", "Handling")}</th>
+              {th("last_played", t("Watched", "Seing"))}
+              {th("risk", t("Risk", "Risiko"))}
+              {th("savings", t("Freed", "Frigjøres"), true)}
             </tr>
           </thead>
           <tbody>
-            {data?.items.map((s) => (
-              <Fragment key={s.id}>
-                <tr className={`row ${open === s.id ? "open" : ""}`}>
-                  <td><input type="checkbox" checked={selSet.has(s.id)} onChange={() => toggle(s.id)} aria-label={`Velg ${s.label}`} /></td>
-                  <td style={{ width: 70 }}><ScoreMeter score={s.score} /></td>
-                  <td className="title-cell">
-                    <div className="with-poster">
-                      <Poster k={s.title_key} title={s.label} size="m" />
-                      <div style={{ minWidth: 0 }}>
-                        <button className="btn small" style={{ border: 0, background: "none", padding: 0, fontWeight: 560, textAlign: "left" }}
-                          onClick={() => setOpen(open === s.id ? null : s.id)} aria-expanded={open === s.id}>
-                          {s.label}{s.year ? ` (${s.year})` : ""}
-                        </button>
-                        <small>{s.library ?? "Nedlastinger"}{s.best_resolution ? `, ${s.best_resolution}` : ""}{s.radarr_id != null ? (s.monitored ? ", overvåket i Radarr" : ", Radarr") : s.sonarr_id != null ? (s.monitored ? ", overvåket i Sonarr" : ", Sonarr") : ""}</small>
+            {data?.items.map((s) => {
+              const name = s.name || s.title_name || s.location;
+              return (
+                <Fragment key={s.id}>
+                  <tr className={`row ${open === s.id ? "open" : ""}`}>
+                    <td><input type="checkbox" checked={selSet.has(s.id)} onChange={() => toggle(s.id)} aria-label={t(`Select ${name}`, `Velg ${name}`)} /></td>
+                    <td style={{ width: 70 }}><ScoreMeter score={s.score} /></td>
+                    <td className="title-cell">
+                      <div className="with-poster">
+                        <Poster k={s.title_key} title={name} size="m" />
+                        <div style={{ minWidth: 0 }}>
+                          <button className="linkish" style={{ fontWeight: 560 }} onClick={() => setOpen(open === s.id ? null : s.id)} aria-expanded={open === s.id}>
+                            {name}{s.year && s.kind !== "delete_season" ? ` (${s.year})` : ""}
+                          </button>
+                          <small>{s.library ?? t("Downloads", "Nedlastinger")}{s.best_resolution ? `, ${s.best_resolution}` : ""}
+                            {s.radarr_id != null ? (s.monitored ? t(", monitored in Radarr", ", overvåket i Radarr") : ", Radarr") : s.sonarr_id != null ? (s.monitored ? t(", monitored in Sonarr", ", overvåket i Sonarr") : ", Sonarr") : ""}</small>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td>{s.action}<div><span className="tag">{KIND_LABEL[s.kind] ?? s.kind}</span></div></td>
-                  <td className="small"><HistoryLine h={s.history} />{s.requests?.length ? <div><RequestedBy requests={s.requests} /></div> : null}</td>
-                  <td><RiskPill risk={s.risk} /></td>
-                  <td className="r num" style={{ fontWeight: 600 }}>{bytes(s.savings)}{s.savings_note && <div className="small faint" style={{ fontWeight: 400, maxWidth: 220, whiteSpace: "normal" }}>{s.savings_note}</div>}</td>
-                </tr>
-                {open === s.id && (
-                  <tr className="detail"><td colSpan={7}><SuggestionDetail id={s.id} />
-                    <p style={{ marginBottom: 0, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      {s.title_key && <button className="btn small" onClick={() => openTitle(s.title_key!)}>Åpne tittel</button>}
-                      {DELETABLE.has(s.kind) && (s.radarr_id != null || s.sonarr_id != null) &&
-                        <button className="btn small danger" onClick={() => setDeleting([s.id])}>{s.kind === "delete_season" ? "Slett sesongen…" : "Slett…"}</button>}
-                    </p>
-                  </td></tr>
-                )}
-              </Fragment>
-            ))}
+                    </td>
+                    <td>{s.label}<div><span className="tag">{kindLabel(s.kind)}</span></div></td>
+                    <td className="small"><HistoryLine h={s.history} />{s.requests?.length ? <div><RequestedBy requests={s.requests} /></div> : null}</td>
+                    <td><RiskPill risk={s.risk} /></td>
+                    <td className="r num" style={{ fontWeight: 600 }}>{bytes(s.savings)}{s.savings_note && <div className="small faint" style={{ fontWeight: 400, maxWidth: 220, whiteSpace: "normal" }}>{s.savings_note}</div>}</td>
+                  </tr>
+                  {open === s.id && (
+                    <tr className="detail"><td colSpan={7}><SuggestionDetail id={s.id} />
+                      <p style={{ marginBottom: 0, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        {s.title_key && <button className="btn small" onClick={() => openTitle(s.title_key!)}>{t("Open title", "Åpne tittel")}</button>}
+                        {DELETABLE.has(s.kind) && (s.radarr_id != null || s.sonarr_id != null) &&
+                          <button className="btn small danger" onClick={() => setDeleting([s.id])}>{s.kind === "delete_season" ? t("Delete the season…", "Slett sesongen…") : t("Delete…", "Slett…")}</button>}
+                        {s.kind === "replace" && <a className="btn small" href="#/quality">{t("Swap quality…", "Bytt kvalitet…")}</a>}
+                        {(s.kind === "remove_copy" || s.kind === "remove_versions") && <a className="btn small" href="#/duplicates">{t("Go to Duplicates", "Gå til Duplikater")}</a>}
+                        {s.kind === "download" && <a className="btn small" href="#/downloads">{t("Go to Downloads", "Gå til Nedlastinger")}</a>}
+                      </p>
+                    </td></tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
       {data && data.items.length === 0 && (
-        <div className="empty">Ingen forslag med disse filtrene. Prøv lavere minimumsprioritet eller fjern søket.</div>
+        <div className="empty">{scope === "recommended"
+          ? t("No recommended suggestions with these filters. Switch to «All» to see everything.", "Ingen anbefalte forslag med disse filtrene. Velg «Alle» for å se alt.")
+          : t("No suggestions with these filters. Try a lower minimum priority or clear the search.", "Ingen forslag med disse filtrene. Prøv lavere minimumsprioritet eller fjern søket.")}</div>
       )}
       {data && data.total > data.items.length && (
-        <p><button className="btn" onClick={() => setLimit(limit + 200)}>Vis flere ({num(data.total - data.items.length)} igjen)</button></p>
+        <p><button className="btn" onClick={() => setLimit(limit + 200)}>{t(`Show more (${num(data.total - data.items.length)} left)`, `Vis flere (${num(data.total - data.items.length)} igjen)`)}</button></p>
       )}
 
       {sel.length > 0 && (
-        <div className="tray" role="region" aria-label="Valgte forslag">
-          <div>
-            <div className="big">{bytes(selInfo?.freed ?? 0)}</div>
-            <div className="small muted">frigjøres av {sel.length} valgte forslag</div>
-          </div>
-          <div className="small muted grow">
-            {selInfo && selInfo.naive_sum && selInfo.naive_sum > selInfo.freed ? `Overlapp fjernet: ${bytes(selInfo.naive_sum - selInfo.freed)}. ` : ""}
-            {selInfo && selInfo.held > 0 ? `${bytes(selInfo.held)} holdes av hardlinker utenfor utvalget. ` : ""}
-            {canDelete ? "Filmer og serier i Radarr/Sonarr kan slettes herfra. Resten gjøres manuelt." : "Sletting er av – slå den på under Innstillinger → Sletting, eller slett i Radarr/Sonarr."}
-          </div>
-          <button className="btn" onClick={() => setSummary(true)}>Vis oppsummering</button>
-          <button className="btn danger" onClick={() => setDeleting(sel)}>Slett valgte…</button>
-          <button className="btn" onClick={() => setSel([])}>Tøm utvalget</button>
-        </div>
-      )}
-
-      {summary && selInfo && (
-        <>
-          <div className="drawer-bg" onClick={() => setSummary(false)} />
-          <aside className="drawer" role="dialog" aria-modal="true" aria-label="Oppsummering av utvalget">
-            <button className="btn small close" onClick={() => setSummary(false)}>Lukk</button>
-            <h1>Oppsummering</h1>
-            <p className="lede">{selInfo.count} forslag, {num(selInfo.files)} filer. {bytes(selInfo.freed)} frigjøres når alt er gjennomført.</p>
-            <table>
-              <thead><tr><th>Forslag</th><th>Risiko</th><th className="r">Alene</th></tr></thead>
-              <tbody>
-                {selInfo.items.map((i) => (
-                  <tr key={i.id}><td>{i.label}<div className="path">{i.location}</div><span className="tag">{KIND_LABEL[i.kind] ?? i.kind}</span></td><td><RiskPill risk={i.risk} /></td><td className="r num">{bytes(i.savings)}</td></tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="small muted">Kolonnen «Alene» viser hvert forslag for seg; totalen over teller hver fil én gang. Denne versjonen sletter ingenting. Bruk listen som arbeidsliste i Radarr/Sonarr, eller eksporter CSV.</p>
-          </aside>
-        </>
+        <Tray figure={bytes(selInfo?.freed ?? 0)} note={t(`freed by ${sel.length} selected`, `frigjøres av ${sel.length} valgte`)}>
+          <span className="small muted" style={{ maxWidth: 420 }}>
+            {selInfo && selInfo.naive_sum && selInfo.naive_sum > selInfo.freed ? t(`Overlap removed: ${bytes(selInfo.naive_sum - selInfo.freed)}. `, `Overlapp fjernet: ${bytes(selInfo.naive_sum - selInfo.freed)}. `) : ""}
+            {selInfo && selInfo.held > 0 ? t(`${bytes(selInfo.held)} held by hardlinks outside the selection. `, `${bytes(selInfo.held)} holdes av hardlinker utenfor utvalget. `) : ""}
+            {!status?.actions_enabled ? t("Deletion is off – the next step shows how to switch it on.", "Sletting er av – neste steg viser hvordan du slår det på.") : ""}
+          </span>
+          <button className="btn" onClick={() => setSel([])}>{t("Clear", "Tøm")}</button>
+          <button className="btn danger" onClick={() => setDeleting(sel)}>{t(`Delete ${selDeletable || ""} selected…`, `Slett ${selDeletable || ""} valgte…`).replace("  ", " ")}</button>
+        </Tray>
       )}
       {deleting && (
         <DeleteDialog ids={deleting} onClose={() => setDeleting(null)}

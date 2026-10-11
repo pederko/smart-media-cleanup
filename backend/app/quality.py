@@ -1,9 +1,9 @@
-"""«Bytt kvalitet»: oversikt over store filmer og sesonger som kan byttes til mindre versjoner,
-med søk og bytte for mange titler om gangen.
+"""Quality: an overview of large movies and seasons that can be swapped for smaller versions,
+with search and swap for many titles at once.
 
-Kandidater: filmer i Radarr der største videofil er over grensen, og sesonger i Sonarr der
-episodene i snitt er over grensen. Søkeresultater gjenbrukes fra cachen til releases.search.
-Selve byttet gjøres av swaps.start – én og én, med de samme sperrene.
+Candidates: movies in Radarr whose largest video file is over the limit, and seasons in Sonarr whose
+episodes are over the limit on average. Search results are reused from the cache of releases.search.
+The swap itself is done by swaps.start – one at a time, with the same safeguards.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import time
 from collections import defaultdict
 
 from . import db, settings, swaps
-from .actions import ActionError
+from .i18n import L, ActionError, AppError
 
 GB = 1024 ** 3
 
@@ -108,17 +108,19 @@ def candidates(kind: str = "", min_movie_gb: float | None = None, min_episode_gb
 
 
 def start_many(items: list[dict], after_swap: str = "none") -> dict:
-    """Start flere bytter. Hvert bytte går gjennom swaps.start med alle sperrer; feil stopper ikke de andre."""
+    """Start several swaps. Each goes through swaps.start with all safeguards; an error does not stop the others."""
     if len(items) > 50:
-        raise ActionError("Maks 50 bytter om gangen")
+        raise ActionError(L("At most 50 swaps at a time", "Maks 50 bytter om gangen"))
     results = []
     for it in items:
         try:
             sw = swaps.start(it["key"], it["guid"], int(it["indexer_id"]), it.get("season"), after_swap)
             results.append({"key": it["key"], "season": it.get("season"), "ok": True, "swap_id": sw["id"]})
-        except PermissionError:
-            raise
-        except Exception as e:  # ActionError, nettverk o.l.
+        except AppError as e:
+            if e.status == 403:
+                raise
+            results.append({"key": it["key"], "season": it.get("season"), "ok": False, "error": e.msg})
+        except Exception as e:  # network etc.
             results.append({"key": it["key"], "season": it.get("season"), "ok": False, "error": str(e)})
         time.sleep(0.2)
     return {"results": results, "started": sum(r["ok"] for r in results), "failed": sum(not r["ok"] for r in results)}

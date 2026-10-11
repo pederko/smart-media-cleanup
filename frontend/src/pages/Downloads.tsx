@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, qs } from "../api";
 import { ago, bytes, num } from "../format";
-import { ErrorNote, useFetch, useOpenTitle, useRefreshTick } from "../components/common";
+import { plural, t } from "../i18n";
+import { Drawer, ErrorNote, Loading, PageHeader, Seg, statusLabel, StatusDot, SwitchedOff, Tray, useFetch, useOpenTitle, useRefreshTick } from "../components/common";
 
 type Item = { name: string; path: string; library: string; is_dir: boolean; files: number; videos: number; size: number;
   freed: number; mtime: number; age_days: number; status: string; advice: string; why: string;
@@ -10,10 +11,10 @@ type Bucket = { count: number; size: number; freed: number };
 type Resp = { libraries: string[]; summary: { count: number; size: number; by_status: Record<string, Bucket>; by_advice: Record<string, Bucket> };
   items: Item[]; files_enabled: boolean; writable: Record<string, boolean> };
 
-const STATUS: Record<string, string> = { kopiert: "Kopi i biblioteket", hardlenket: "Hardlenket", ikke_importert: "Ikke importert", uten_video: "Uten video" };
-const ADVICE: Record<string, [string, string]> = { slett: ["Kan slettes", "risk-lav"], vurder: ["Vurder", "risk-middels"], behold: ["Behold", "muted"] };
-
-function pl(n: number, one: string, many: string) { return `${num(n)} ${n === 1 ? one : many}`; }
+const statusText = (s: string) => ({ copied: t("Copy in the library", "Kopi i biblioteket"), hardlinked: t("Hardlinked", "Hardlenket"),
+  not_imported: t("Not imported", "Ikke importert"), no_video: t("No video", "Uten video") } as Record<string, string>)[s] ?? s;
+const adviceText = (a: string): [string, string] => (({ delete: [t("Can be deleted", "Kan slettes"), "risk-low"],
+  consider: [t("Consider", "Vurder"), "risk-medium"], keep: [t("Keep", "Behold"), "muted"] } as Record<string, [string, string]>)[a] ?? [a, ""]);
 
 export default function DownloadsPage() {
   const tick = useRefreshTick();
@@ -30,78 +31,94 @@ export default function DownloadsPage() {
   const ro = data ? data.libraries.filter((l) => data.writable[l] === false) : [];
   const items = data?.items ?? [];
   const selFreed = items.filter((i) => sel.includes(i.path)).reduce((x, i) => x + i.freed, 0);
-  const deletable = items.filter((i) => i.status !== "hardlenket");
+  const entries = (n: number) => plural(n, ["entry", "entries"], ["oppføring", "oppføringer"]);
+  const filter = (k: string) => { setStatus(k); setAdvice(""); };
+
+  if (data && data.libraries.length === 0) {
+    return (
+      <>
+        <PageHeader title={t("Downloads", "Nedlastinger")} />
+        <div className="empty">{t("No library is set as a downloads folder. Set the type «Downloads» on it under Settings → Libraries.",
+          "Ingen bibliotek er satt som nedlastingsmappe. Velg typen «Nedlastinger» under Innstillinger → Biblioteker.")}</div>
+      </>
+    );
+  }
 
   return (
     <>
-      <h1>Nedlastinger</h1>
+      <PageHeader title={t("Downloads", "Nedlastinger")}
+        lede={t("What is in the downloads folder, whether it has been imported to a library, and what can safely go. Anything changed in the last 14 days is kept.",
+          "Hva som ligger i nedlastingsmappen, om det er importert til et bibliotek, og hva som trygt kan fjernes. Alt som er endret de siste 14 dagene beholdes.")} />
       <ErrorNote error={error} />
       {s && (
         <section className="brief">
           <p className="brief-lead">
-            {data!.libraries.join(" og ")} inneholder <b>{pl(s.count, "oppføring", "oppføringer")}</b> på <b>{bytes(s.size)}</b>.{" "}
-            {a("slett").count > 0 && <>{pl(a("slett").count, "kan", "kan")} trygt slettes og frigjør <b>{bytes(a("slett").freed)}</b>.</>}
+            {t(`${data!.libraries.join(" and ")} contains`, `${data!.libraries.join(" og ")} inneholder`)} <b>{entries(s.count)}</b> {t("using", "på")} <b>{bytes(s.size)}</b>.{" "}
+            {a("delete").count > 0 && <>{t(`${num(a("delete").count)} can safely be deleted and free`, `${num(a("delete").count)} kan trygt slettes og frigjør`)} <b>{bytes(a("delete").freed)}</b>.</>}
           </p>
           <ul className="brief-points">
-            {st("kopiert").count > 0 && <li><button className="linkish" onClick={() => { setStatus("kopiert"); setAdvice(""); }}>{pl(st("kopiert").count, "nedlasting", "nedlastinger")}</button> finnes også som kopi i biblioteket ({bytes(st("kopiert").freed)} kan frigjøres).</li>}
-            {st("hardlenket").count > 0 && <li><button className="linkish" onClick={() => { setStatus("hardlenket"); setAdvice(""); }}>{pl(st("hardlenket").count, "er hardlenket", "er hardlenket")}</button> til biblioteket og tar ikke ekstra plass ({bytes(st("hardlenket").size)}).</li>}
-            {st("ikke_importert").count > 0 && <li><button className="linkish" onClick={() => { setStatus("ikke_importert"); setAdvice(""); }}>{pl(st("ikke_importert").count, "er ikke importert", "er ikke importert")}</button> ({bytes(st("ikke_importert").size)}) – sjekk om de er glemt eller feilet.</li>}
-            {st("uten_video").count > 0 && <li>{pl(st("uten_video").count, "inneholder", "inneholder")} ingen video – rester etter nedlasting ({bytes(st("uten_video").size)}).</li>}
-            {a("behold").count > 0 && <li>{pl(a("behold").count, "er nylig endret", "er nylig endret")} eller hardlenket, og bør få ligge.</li>}
+            {st("copied").count > 0 && <li><button className="linkish" onClick={() => filter("copied")}>{entries(st("copied").count)}</button> {t(`also exist as a copy in the library (${bytes(st("copied").freed)} can be freed).`, `finnes også som kopi i biblioteket (${bytes(st("copied").freed)} kan frigjøres).`)}</li>}
+            {st("hardlinked").count > 0 && <li><button className="linkish" onClick={() => filter("hardlinked")}>{entries(st("hardlinked").count)}</button> {t(`are hardlinked to the library and take no extra space (${bytes(st("hardlinked").size)}).`, `er hardlenket til biblioteket og tar ikke ekstra plass (${bytes(st("hardlinked").size)}).`)}</li>}
+            {st("not_imported").count > 0 && <li><button className="linkish" onClick={() => filter("not_imported")}>{entries(st("not_imported").count)}</button> {t(`are not imported (${bytes(st("not_imported").size)}) – check whether they were forgotten or failed.`, `er ikke importert (${bytes(st("not_imported").size)}) – sjekk om de er glemt eller feilet.`)}</li>}
+            {st("no_video").count > 0 && <li>{t(`${entries(st("no_video").count)} contain no video – leftovers from downloads (${bytes(st("no_video").size)}).`, `${entries(st("no_video").count)} inneholder ingen video – rester etter nedlasting (${bytes(st("no_video").size)}).`)}</li>}
           </ul>
-          <p className="small muted">Ligger noe fortsatt til deling i qBittorrent, vil torrenten melde at filene mangler etter sletting. Fjern den da i qBittorrent.</p>
-          {data && !data.files_enabled && <div className="notice">Sletting av filer er av. Slå den på under <a href="#/innstillinger">Innstillinger → Sletting</a>.</div>}
-          {data && data.files_enabled && ro.length > 0 && <div className="notice">{ro.join(", ")} er montert med <code>:ro</code>. Fjern <code>:ro</code> i appens YAML for å kunne slette herfra.</div>}
+          <p className="small muted">{t("If something is still seeding, the torrent will report missing files after deletion. Remove it in the download client then.",
+            "Ligger noe fortsatt til deling, vil torrenten melde at filene mangler etter sletting. Fjern den da i nedlastingsklienten.")}</p>
+          {data && !data.files_enabled && <SwitchedOff what="files" />}
+          {data && data.files_enabled && ro.length > 0 && <div className="notice">{t(`${ro.join(", ")} is mounted read-only (:ro). Remove :ro in the app's compose file to delete from here.`, `${ro.join(", ")} er montert skrivebeskyttet (:ro). Fjern :ro i appens compose-fil for å kunne slette herfra.`)}</div>}
         </section>
       )}
 
       <div className="toolbar" style={{ marginTop: 28 }}>
-        <div className="seg" role="group" aria-label="Anbefaling">
-          {[["", "Alle"], ["slett", "Kan slettes"], ["vurder", "Vurder"], ["behold", "Behold"]].map(([v, l]) => (
-            <button key={v} aria-pressed={advice === v && !status} onClick={() => { setAdvice(v); setStatus(""); }}>{l}{v && s ? ` (${a(v).count})` : ""}</button>
-          ))}
-        </div>
-        <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sorter">
-          <option value="size">Størst</option>
-          <option value="freed">Mest å frigjøre</option>
-          <option value="age">Eldst</option>
-          <option value="name">Navn</option>
+        <Seg label={t("Recommendation", "Anbefaling")} value={status ? "_status" : advice} onChange={(v) => { setAdvice(v); setStatus(""); }} options={[
+          { value: "", label: t("All", "Alle") },
+          { value: "delete", label: `${t("Can be deleted", "Kan slettes")}${s ? ` (${a("delete").count})` : ""}` },
+          { value: "consider", label: `${t("Consider", "Vurder")}${s ? ` (${a("consider").count})` : ""}` },
+          { value: "keep", label: `${t("Keep", "Behold")}${s ? ` (${a("keep").count})` : ""}` },
+        ]} />
+        <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label={t("Sort", "Sorter")}>
+          <option value="size">{t("Largest", "Størst")}</option>
+          <option value="freed">{t("Most to free", "Mest å frigjøre")}</option>
+          <option value="age">{t("Oldest", "Eldst")}</option>
+          <option value="name">{t("Name", "Navn")}</option>
         </select>
-        {status && <button className="btn small" onClick={() => setStatus("")}>Vis alle statuser</button>}
-        {deletable.length > 0 && <button className="btn small" onClick={() => setSel([...new Set([...sel, ...items.filter((i) => i.advice === "slett").map((i) => i.path)])])}>Velg alle som kan slettes</button>}
+        {status && <button className="btn small" onClick={() => setStatus("")}>{t(`Filter: ${statusText(status)} ✕`, `Filter: ${statusText(status)} ✕`)}</button>}
+        {a("delete").count > 0 && <button className="btn small" onClick={() => setSel([...new Set([...sel, ...items.filter((i) => i.advice === "delete").map((i) => i.path)])])}>{t("Select all that can be deleted", "Velg alle som kan slettes")}</button>}
       </div>
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th style={{ width: 36 }} /><th>Navn</th><th>Status</th><th>Anbefaling</th><th>Endret</th><th className="r">Størrelse</th><th className="r">Frigjøres</th></tr></thead>
+          <thead><tr><th style={{ width: 36 }} /><th>{t("Name", "Navn")}</th><th>{t("Status", "Status")}</th><th>{t("Recommendation", "Anbefaling")}</th><th>{t("Changed", "Endret")}</th><th className="r">{t("Size", "Størrelse")}</th><th className="r">{t("Freed", "Frigjøres")}</th></tr></thead>
           <tbody>
-            {items.map((i) => (
-              <tr key={i.path} className="row">
-                <td>{i.status !== "hardlenket" && <input type="checkbox" checked={sel.includes(i.path)} aria-label={`Velg ${i.name}`}
-                  onChange={() => setSel(sel.includes(i.path) ? sel.filter((x) => x !== i.path) : [...sel, i.path])} />}</td>
-                <td className="title-cell">
-                  {i.name}
-                  <small>{i.is_dir ? `Mappe, ${pl(i.files, "fil", "filer")}` : "Fil"}{i.title_key && <> – <button className="linkish" onClick={() => openTitle(i.title_key!)}>{i.title_name}</button></>}</small>
-                </td>
-                <td><span className="tag">{STATUS[i.status] ?? i.status}</span></td>
-                <td className="small"><span className={ADVICE[i.advice]?.[1]}>{ADVICE[i.advice]?.[0]}</span><div className="muted">{i.why}</div></td>
-                <td className="small muted">{ago(i.mtime)}</td>
-                <td className="r num">{bytes(i.size)}</td>
-                <td className="r num" style={{ fontWeight: 600 }}>{bytes(i.freed)}</td>
-              </tr>
-            ))}
+            {items.map((i) => {
+              const [adv, cls] = adviceText(i.advice);
+              return (
+                <tr key={i.path} className="row">
+                  <td>{i.status !== "hardlinked" && <input type="checkbox" checked={sel.includes(i.path)} aria-label={t(`Select ${i.name}`, `Velg ${i.name}`)}
+                    onChange={() => setSel(sel.includes(i.path) ? sel.filter((x) => x !== i.path) : [...sel, i.path])} />}</td>
+                  <td className="title-cell">
+                    {i.name}
+                    <small>{i.is_dir ? t(`Folder, ${plural(i.files, ["file", "files"], ["fil", "filer"])}`, `Mappe, ${plural(i.files, ["file", "files"], ["fil", "filer"])}`) : t("File", "Fil")}
+                      {i.title_key && <> – <button className="linkish" onClick={() => openTitle(i.title_key!)}>{i.title_name}</button></>}</small>
+                  </td>
+                  <td><span className="tag">{statusText(i.status)}</span></td>
+                  <td className="small"><span className={cls}>{adv}</span><div className="muted">{i.why}</div></td>
+                  <td className="small muted">{ago(i.mtime)}</td>
+                  <td className="r num">{bytes(i.size)}</td>
+                  <td className="r num" style={{ fontWeight: 600 }}>{bytes(i.freed)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
-      {data && items.length === 0 && <div className="empty">Ingenting i dette utvalget.</div>}
+      {data && items.length === 0 && <div className="empty">{t("Nothing in this view.", "Ingenting i dette utvalget.")}</div>}
 
       {sel.length > 0 && (
-        <div className="tray" role="region" aria-label="Valgte">
-          <div><div className="big">{bytes(selFreed)}</div><div className="small muted">frigjøres av {pl(sel.length, "valgt", "valgte")}</div></div>
-          <div className="grow" />
-          <button className="btn" onClick={() => setSel([])}>Tøm utvalget</button>
-          <button className="btn danger" onClick={() => setDialog(true)}>Slett valgte…</button>
-        </div>
+        <Tray figure={bytes(selFreed)} note={t(`freed by ${sel.length} selected`, `frigjøres av ${sel.length} valgte`)}>
+          <button className="btn" onClick={() => setSel([])}>{t("Clear", "Tøm")}</button>
+          <button className="btn danger" onClick={() => setDialog(true)}>{t("Delete selected…", "Slett valgte…")}</button>
+        </Tray>
       )}
       {dialog && <DeleteDownloads paths={sel} onClose={() => setDialog(false)} onDone={() => { setSel([]); reload(); }} />}
     </>
@@ -124,36 +141,33 @@ function DeleteDownloads({ paths, onClose, onDone }: { paths: string[]; onClose:
   };
   const ok = plan?.items.filter((i) => i.ok) ?? [];
   const no = plan?.items.filter((i) => !i.ok) ?? [];
+  const entries = (n: number) => plural(n, ["entry", "entries"], ["oppføring", "oppføringer"]);
   return (
-    <>
-      <div className="drawer-bg" onClick={() => !busy && onClose()} />
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label="Slett nedlastinger">
-        <button className="btn small close" onClick={onClose} disabled={busy}>Lukk</button>
-        {res ? (
-          <>
-            <h1>{res.failed ? "Delvis fullført" : "Slettet"}</h1>
-            <p className="lede">{pl(res.done, "oppføring", "oppføringer")} slettet. Omtrent {bytes(res.freed_estimate)} frigjort. En full oppdatering er startet.</p>
-            <table className="compact"><tbody>{res.results.map((r) => <tr key={r.path}><td><i className={`dot ${r.status === "utført" ? "ok" : r.status === "feilet" ? "bad" : "off"}`} />{r.path.split("/").pop()}</td><td className="small muted">{r.detail}</td></tr>)}</tbody></table>
-            <p><button className="btn primary" onClick={onClose}>Ferdig</button></p>
-          </>
-        ) : (
-          <>
-            <h1>Slett {pl(ok.length, "oppføring", "oppføringer")}</h1>
-            {error && <div className="notice err">{error}</div>}
-            {!plan ? <p className="muted">Lager oppsummering…</p> : !plan.enabled ? (
-              <div className="notice">Sletting av filer er slått av. Slå den på under <a href="#/innstillinger" onClick={onClose}>Innstillinger → Sletting</a>.</div>
-            ) : (
-              <>
-                <p className="lede">{ok.length > 0 ? <>Mappene og filene slettes fra disk. <b>{bytes(plan.freed)}</b> frigjøres. Dette kan ikke angres.</> : "Ingen av de valgte kan slettes."}</p>
-                {ok.some((i) => i.age_days < 14) && <div className="notice">Noe er endret de siste 14 dagene og kan fortsatt være under nedlasting, import eller deling.</div>}
-                <table className="compact"><tbody>{ok.map((i) => <tr key={i.path}><td>{i.name}<div className="small muted">{STATUS[i.status]}</div></td><td className="r num">{bytes(i.freed)}</td></tr>)}</tbody></table>
-                {no.length > 0 && <details style={{ marginTop: 12 }}><summary className="small muted">{no.length} tas ikke med</summary><ul className="conseq small">{no.map((i) => <li key={i.path}>{i.name}: {i.reason}</li>)}</ul></details>}
-                {ok.length > 0 && <p style={{ marginTop: 20 }}><button className="btn danger" onClick={run} disabled={busy}>{busy ? "Sletter…" : `Slett ${pl(ok.length, "oppføring", "oppføringer")} (${bytes(plan.freed)})`}</button></p>}
-              </>
-            )}
-          </>
-        )}
-      </aside>
-    </>
+    <Drawer label={t("Delete downloads", "Slett nedlastinger")} onClose={onClose} busy={busy}>
+      {res ? (
+        <>
+          <h1>{res.failed ? t("Partly done", "Delvis fullført") : t("Deleted", "Slettet")}</h1>
+          <p className="lede">{t(`${entries(res.done)} deleted. About ${bytes(res.freed_estimate)} freed. A full refresh has started.`, `${entries(res.done)} slettet. Omtrent ${bytes(res.freed_estimate)} frigjort. En full oppdatering er startet.`)}</p>
+          <table className="compact"><tbody>{res.results.map((r) => <tr key={r.path}><td><StatusDot status={r.status} />{r.path.split("/").pop()}</td><td className="small muted">{statusLabel(r.status)}: {r.detail}</td></tr>)}</tbody></table>
+          <p><button className="btn primary" onClick={onClose}>{t("Done", "Ferdig")}</button></p>
+        </>
+      ) : (
+        <>
+          <h1>{t(`Delete ${entries(ok.length)}`, `Slett ${entries(ok.length)}`)}</h1>
+          {error && <div className="notice err">{error}</div>}
+          {!plan ? <Loading /> : !plan.enabled ? <SwitchedOff what="files" onClose={onClose} /> : (
+            <>
+              <p className="lede">{ok.length > 0
+                ? <>{t("The folders and files are deleted from disk.", "Mappene og filene slettes fra disk.")} <b>{bytes(plan.freed)}</b> {t("is freed. This cannot be undone.", "frigjøres. Dette kan ikke angres.")}</>
+                : t("None of the selected can be deleted.", "Ingen av de valgte kan slettes.")}</p>
+              {ok.some((i) => i.age_days < 14) && <div className="notice">{t("Something was changed in the last 14 days and may still be downloading, importing or seeding.", "Noe er endret de siste 14 dagene og kan fortsatt være under nedlasting, import eller deling.")}</div>}
+              <table className="compact"><tbody>{ok.map((i) => <tr key={i.path}><td>{i.name}<div className="small muted">{statusText(i.status)}</div></td><td className="r num">{bytes(i.freed)}</td></tr>)}</tbody></table>
+              {no.length > 0 && <details style={{ marginTop: 12 }} open={ok.length === 0}><summary className="small muted">{t(`${no.length} not included`, `${no.length} tas ikke med`)}</summary><ul className="conseq small">{no.map((i) => <li key={i.path}>{i.name}: {i.reason}</li>)}</ul></details>}
+              {ok.length > 0 && <p style={{ marginTop: 20 }}><button className="btn danger" onClick={run} disabled={busy}>{busy ? t("Deleting…", "Sletter…") : t(`Delete ${entries(ok.length)} (${bytes(plan.freed)})`, `Slett ${entries(ok.length)} (${bytes(plan.freed)})`)}</button></p>}
+            </>
+          )}
+        </>
+      )}
+    </Drawer>
   );
 }

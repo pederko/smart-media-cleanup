@@ -1,27 +1,27 @@
-# Smart Media Cleanup – app-oppsett for TrueNAS SCALE 25.10 (Goldeye)
+# Smart Media Cleanup – custom app for TrueNAS SCALE 25.04+ (tested on 25.10)
 #
-# HVOR DENNE LIMES INN
-#   Dette er IKKE for skjemaet «Install iX App» (det med Repository, Tag, Hostname osv.).
+# WHERE TO PASTE THIS
+#   Not in the «Install iX App» form (the one with Repository, Tag, Hostname …).
 #   1. Apps → Discover Apps.
-#   2. Øverst til høyre: klikk på pilen / menyen ved siden av knappen «Custom App»
-#      og velg «Install via YAML».
+#   2. Top right: click the arrow / menu next to «Custom App» and choose «Install via YAML».
 #   3. Name: mediacleanup
-#   4. Custom Config: lim inn HELE denne filen (kommentarene kan være med).
-#   5. Save. TrueNAS henter imaget fra ghcr.io og starter appen på http://<truenas-ip>:30480
+#   4. Custom Config: paste this WHOLE file (the comments can stay).
+#   5. Save. TrueNAS pulls the image from ghcr.io and starts the app on http://<truenas-ip>:30480
 #
-# FØR DU INSTALLERER (én gang, i TrueNAS-shell som root):
-#   mkdir -p /mnt/pool1/apps/mediacleanup/data
-#   chown -R 568:568 /mnt/pool1/apps/mediacleanup/data
+# BEFORE YOU INSTALL (once, in the TrueNAS shell as root) – adjust the path to your pool:
+#   mkdir -p /mnt/tank/apps/mediacleanup/data
+#   chown -R 568:568 /mnt/tank/apps/mediacleanup/data
 #
-# Alle mediemapper monteres skrivebeskyttet (:ro) som standard. Da kan appen bare slette via
-# Radarr/Sonarr (hvis det slås på i appen), aldri direkte på disk. Se kommentaren ved volumes.
-# Adresser og nøkler til Radarr/Sonarr/Plex/Tautulli/Seerr legges inn i appen etterpå
-# (Innstillinger), eller som miljøvariabler under «environment» nedenfor.
+# LIBRARIES: mount each media folder under /media/<Name> (see «volumes» below). The app finds
+# them on first start, names the libraries after the folders and works out the TrueNAS path.
+# Check the result under Settings → Libraries and paths.
 #
-# WEB UI-KNAPP: x-portals gir knappen «Web UI» i Apps-oversikten. TrueNAS leser den
-# bare ved installasjon – har du allerede installert appen uten den, må appen slettes og
-# installeres på nytt (data i /mnt/pool1/apps/mediacleanup/data beholdes).
-# Åpner knappen 0.0.0.0, bytt host med TrueNAS-maskinens IP-adresse.
+# READ-ONLY BY DEFAULT: with «:ro» the app can never delete anything on disk itself – at most
+# through Radarr/Sonarr/Plex, and only if you switch it on in the app. Remove «:ro» only on the
+# folders where you want to clean up duplicates, downloads or orphaned folders from the app.
+#
+# WEB UI BUTTON: x-portals gives the «Web UI» button in the Apps list. TrueNAS only reads it at
+# install time. If it opens 0.0.0.0, replace host with the IP address of the TrueNAS machine.
 
 x-portals:
   - name: Web UI
@@ -32,39 +32,36 @@ x-portals:
 
 services:
   mediacleanup:
-    # :latest = siste utgivelse. TrueNAS viser «Update available» når en ny versjon er ute,
-    # og Apps → mediacleanup → ⋮ → Update henter den. Vil du låse versjonen: bruk f.eks. :0.10.0
+    # :latest = the latest release. TrueNAS shows «Update available» when a new version is out,
+    # and Apps → mediacleanup → ⋮ → Update fetches it. To pin a version, use e.g. :1.0.0
     image: ghcr.io/pederko/smart-media-cleanup:latest
     restart: unless-stopped
     user: "568:568"
     ports:
       - "30480:8000"
     environment:
-      TZ: Europe/Oslo
-      # Valgfritt: sett adresser/nøkler her i stedet for i grensesnittet.
-      # Verdier satt her overstyrer og låser feltene i appen.
-      # SMC_RADARR_URL: "http://192.168.1.10:30025"
+      TZ: Etc/UTC          # your time zone, e.g. Europe/Oslo
+      # Optional: set addresses/keys here instead of in the web UI.
+      # Values set here override and lock the fields in the app.
+      # SMC_RADARR_URL: "http://<nas-ip>:30025"
       # SMC_RADARR_API_KEY: ""
-      # SMC_SONARR_URL: "http://192.168.1.10:30027"
+      # SMC_SONARR_URL: "http://<nas-ip>:30027"
       # SMC_SONARR_API_KEY: ""
-      # SMC_PLEX_URL: "http://192.168.1.10:32400"
+      # SMC_PLEX_URL: "http://<nas-ip>:32400"
       # SMC_PLEX_TOKEN: ""
-      # SMC_TAUTULLI_URL: "http://192.168.1.10:30047"
+      # SMC_TAUTULLI_URL: "http://<nas-ip>:30047"
       # SMC_TAUTULLI_API_KEY: ""
-      # SMC_SEERR_URL: "http://192.168.1.10:30357"
+      # SMC_SEERR_URL: "http://<nas-ip>:30357"
       # SMC_SEERR_API_KEY: ""
-      # Valgfri innlogging (Basic auth) for nettsiden:
+      # Optional login (basic auth) for the web UI:
       # SMC_USERNAME: "admin"
       # SMC_PASSWORD: ""
     volumes:
-      - /mnt/pool1/apps/mediacleanup/data:/data
-      # :ro = bare lesetilgang. For å kunne slette duplikatfiler (identiske kopier og ekstra versjoner)
-      # og gamle nedlastinger i tmp fra appen: fjern :ro på mappene det gjelder, og slå på
-      # «Tillat sletting av filer» under Innstillinger → Sletting.
-      - /mnt/pool1/FILM:/media/FILM:ro
-      - /mnt/pool1/TV:/media/TV:ro
-      - /mnt/pool1/Barn:/media/Barn:ro   # fjern :ro for å kunne rydde duplikater i Barn
-      - /mnt/pool1/tmp:/media/tmp:ro
+      - /mnt/tank/apps/mediacleanup/data:/data
+      # One line per media folder: <path on TrueNAS>:/media/<Name>:ro
+      - /mnt/tank/media/Movies:/media/Movies:ro
+      - /mnt/tank/media/TV:/media/TV:ro
+      - /mnt/tank/media/downloads:/media/downloads:ro
     read_only: true
     tmpfs:
       - /tmp

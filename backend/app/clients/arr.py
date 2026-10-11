@@ -1,15 +1,16 @@
-"""Radarr og Sonarr. Kun GET-kall. Begge bruker /api/v3 (også Sonarr v4)."""
+"""Radarr and Sonarr. GET calls only. Both use /api/v3 (also Sonarr v4)."""
 from __future__ import annotations
 
 import json
 from typing import Callable
 
+from ..i18n import L
 from .base import ServiceError, get_json, ts
 
 
 def _cfg(cfg: dict) -> tuple[str, dict]:
     if not cfg.get("url") or not cfg.get("api_key"):
-        raise ServiceError("URL eller API-nøkkel mangler")
+        raise ServiceError(L("URL or API key is missing", "URL eller API-nøkkel mangler"))
     return cfg["url"].rstrip("/"), {"X-Api-Key": cfg["api_key"]}
 
 
@@ -69,3 +70,9 @@ def fetch_sonarr(cfg: dict, map_path: Callable[[str | None], str | None],
         if progress and i % 10 == 0:
             progress(i / max(1, len(series)), f"Sonarr: {i}/{len(series)} serier")
     return series_rows, file_rows
+
+
+def root_folders(cfg: dict) -> list[str]:
+    """The root folders as Radarr/Sonarr see them (used to suggest path mappings)."""
+    base, h = _cfg(cfg)
+    return [r["path"] for r in get_json(f"{base}/api/v3/rootfolder", headers=h, retries=0) if r.get("path")]

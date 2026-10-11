@@ -1,8 +1,8 @@
-"""Kobler filer -> titler (filmer/serier) og aggregerer seerhistorikk per tittel og sesong.
+"""Links files -> titles (movies/series) and aggregates watch history per title and season.
 
-Nøkkelen er vertssti. Prioritet for tittel: Radarr-/Sonarr-mappe > toppnivåmappe i biblioteket.
-Plex-elementer knyttes til tittelen via filene (Media/Part), og Tautulli-avspillinger via Plex ratingKey,
-med navn+år som reserve når ratingKey har endret seg.
+The key is the host path. Title priority: Radarr/Sonarr folder > top-level folder in the library.
+Plex items are linked to the title through its files (Media/Part), and Tautulli plays through the
+Plex ratingKey, with name + year as a fallback when the ratingKey has changed.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from .. import db
+from ..i18n import L, fmt, join
 
 YEAR_RE = re.compile(r"^(.+?)\s*\((\d{4})\)\s*$")
 EP_RE = re.compile(r"[Ss](\d{1,3})[ ._-]?[Ee](\d{1,4})")
@@ -55,7 +56,7 @@ class FileRec:
     season: int | None = None
     episode: int | None = None
     resolution: int = 0
-    managed: bool = False  # Radarr/Sonarr kjenner akkurat denne filen
+    managed: bool = False  # Radarr/Sonarr knows exactly this file
 
     @property
     def ino(self) -> tuple[int, int]:
@@ -78,7 +79,7 @@ class Title:
     tags: list = field(default_factory=list)
     labels: list = field(default_factory=list)
     protected: bool = False
-    protect_reason: str | None = None
+    protect_reason: dict | None = None
     files: list = field(default_factory=list)
     play_count: int = 0
     last_played: int | None = None
@@ -87,7 +88,7 @@ class Title:
     requested_by: str | None = None
     requested_at: int | None = None
     requests: list = field(default_factory=list)       # [{by, plex_username, at, watched}]
-    viewer_names: set = field(default_factory=set)    # visningsnavn + brukernavn, små bokstaver
+    viewer_names: set = field(default_factory=set)    # display names + usernames, lower case
     seasons_monitored: dict = field(default_factory=dict)
     season_stats: dict = field(default_factory=dict)  # season -> {plays,last,users,recent_users}
 
@@ -204,7 +205,7 @@ def build(c, s: dict, now: float) -> Model:
         f.title_key = key
         t.files.append(f)
 
-        # sesong/episode + oppløsning
+        # season/episode + resolution
         sf = sonarr_files.get(f.path)
         rf = radarr_files.get(f.path)
         if sf:
@@ -233,12 +234,12 @@ def build(c, s: dict, now: float) -> Model:
             else:
                 t.plex_keys.add(("movie", it["rating_key"]))
 
-    # Fjern Radarr/Sonarr-titler uten filer på disk (ingenting å frigjøre)
+    # Drop Radarr/Sonarr titles without files on disk (nothing to free)
     titles = {k: t for k, t in titles.items() if t.files}
 
     for t in titles.values():
         lib = libs.get(t.library, {})
-        # type, navn og lagt-til for titler utenfor Radarr/Sonarr
+        # kind, name and added date for titles outside Radarr/Sonarr
         if t.kind == "unknown":
             kinds = {k for k, _ in t.plex_keys}
             if "show" in kinds:
@@ -260,21 +261,22 @@ def build(c, s: dict, now: float) -> Model:
         if not t.added:
             cands = [a for a in plex_added if a] or [int(f.mtime) for f in t.videos] or [int(f.mtime) for f in t.files]
             t.added = min(cands) if cands else None
-        # Beskyttelse
+        # Protection
         reasons = []
         if lib.get("protected"):
-            reasons.append(f"Biblioteket {t.library} er beskyttet")
+            reasons.append(fmt("The library {lib} is protected", "Biblioteket {lib} er beskyttet", lib=t.library))
         tagged = [x for x in t.tags if x.lower() in prot_tags]
         if tagged:
-            reasons.append(f"Tagget «{tagged[0]}» i {'Radarr' if t.radarr_id else 'Sonarr'}")
+            arr = "Radarr" if t.radarr_id else "Sonarr"
+            reasons.append(fmt("Tagged «{tag}» in {arr}", "Tagget «{tag}» i {arr}", tag=tagged[0], arr=arr))
         if t.labels:
-            reasons.append(f"Plex-etikett «{t.labels[0]}»")
+            reasons.append(fmt("Plex label «{lab}»", "Plex-etikett «{lab}»", lab=t.labels[0]))
         if any(t.folder == p or t.folder.startswith(p + "/") for p in prot_paths):
-            reasons.append("Beskyttet sti")
+            reasons.append(L("Protected path", "Beskyttet sti"))
         if reasons:
-            t.protected, t.protect_reason = True, "; ".join(reasons)
+            t.protected, t.protect_reason = True, join(reasons)
 
-    # ---- Avspillinger ----
+    # ---- Plays ----
     movie_by_rk, show_by_rk = {}, {}
     movie_by_name, show_by_name = defaultdict(list), defaultdict(list)
     for t in titles.values():
@@ -320,7 +322,7 @@ def build(c, s: dict, now: float) -> Model:
                 if date >= recent_cut:
                     ss["recent_users"].add(p["user"])
 
-    # ---- Forespørsler (Seerr) ----
+    # ---- Requests (Seerr) ----
     by_tmdb = {m["tmdb_id"]: f"movie:r:{m['id']}" for m in radarr if m["tmdb_id"]}
     by_tvdb = {sr["tvdb_id"]: f"series:s:{sr['id']}" for sr in sonarr if sr["tvdb_id"]}
     by_plex = {rk: t for t in titles.values() for _, rk in t.plex_keys}
@@ -328,7 +330,7 @@ def build(c, s: dict, now: float) -> Model:
         k = by_tmdb.get(r["tmdb_id"]) if r["media_type"] == "movie" else by_tvdb.get(r["tvdb_id"])
         t = titles.get(k) if k else None
         if t is None and r.get("rating_key"):
-            t = by_plex.get(r["rating_key"])  # f.eks. titler som ikke ligger i Radarr/Sonarr
+            t = by_plex.get(r["rating_key"])  # e.g. titles that are not in Radarr/Sonarr
         if t is None or not r["requested_by"]:
             continue
         names = {n.lower() for n in (r["requested_by"], r.get("plex_username")) if n}

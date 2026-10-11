@@ -1,88 +1,31 @@
-# Endringslogg
+# Changelog
 
-## 0.13.0
-- Ny side **Bytt kvalitet**: alle filmer og sesonger over grensen (justerbar på siden), med nåværende størrelse, seing, anbefalt mindre utgivelse og gevinst. Filtrer på filmer/serier og «aldri sett», sorter på gevinst, størrelse eller sist sett.
-- Kryss av mange og «Søk etter valgte»: søker én og én (maks 25 per runde) med fremdrift og stoppknapp. Resultatene lagres og vises i listen.
-- «Bytt N…» starter mange bytter med én bekreftelse – med samlet gevinst, hvor mye som lastes ned først, og valg for hva som skjer etterpå. Status per tittel følges i listen.
+## 1.0.0
+The first complete release: everything from the 0.x series pulled together into one consistent app.
 
-## 0.12.0
-- «Annet» i kapasitetsstolpen er klikkbar: ny side som viser hvilke datasett (apper, appdata, opptak, rotdatasettet) og snapshots som bruker plassen utenfor bibliotekene, med råd om hvor det ryddes. Bare visning – appen har med vilje ikke tilgang til disse mappene.
+- **English and Norwegian.** The whole web UI, and every message from the server, is available in English and Norwegian Bokmål. Choose in the menu (EN/NO); the default follows the browser. Error messages, suggestion explanations and the CSV export follow the same language.
+- **New structure.** The menu is grouped into *Library* (Movies, Series, Users, Largest files), *Free up space* (Suggestions, Swap quality, Duplicates, Downloads, Plex differences, Other storage) and *System* (Activity, Settings). Jobs, swaps and the deletion log are combined under **Activity**. The separate «Titles» page is gone – Movies and Series cover it.
+- **Overview answers «how much, and where?»** The headline shows what is *recommended* to free (priority ≥ 50 and not high risk), with the total of all suggestions beside it. Below it, one card per area – delete titles, swap quality, duplicates, downloads, Plex differences and other storage – each linking to its page.
+- **Suggestions** open on «Recommended», with «All» one click away. Each row links to the right place to act (delete, swap quality, duplicates, downloads).
+- **Getting started checklist** on the overview until the libraries, services, path mappings and the first refresh are in place.
+- **Libraries are detected automatically** from the folders mounted under `/media`, including the TrueNAS path behind each bind mount. No personal paths are built in any more. Existing settings are kept as they are.
+- **Path mapping suggestions**: the app reads the root folders of Radarr/Sonarr and the Plex library locations and suggests mappings by folder name – one click to use.
+- **Settings** in sections you can link to (`#/settings/deletion` and so on), libraries can be added, removed and re-detected, and the deletion section shows write access per folder.
+- Consistent page layout, filter chips that wrap cleanly, a selection bar at the bottom on every page that can delete, side panels for every confirmation, and a menu button on small screens.
+- The code, comments, tests and documentation are in English. Stored status values (swaps, the action log) are migrated automatically; derived analysis results are rebuilt at the first start after the upgrade.
 
-## 0.11.0
-- **Plex-avvik → I Plex, mangler på disk:** kryss av og «Fjern fra Plex». Hele serien fjernes hvis alt mangler, ellers bare episodene (eller versjonene) som mangler. Appen kontrollerer rett før hvert kall at filene ikke finnes og at mappen er montert. Krever «Allow media deletion» i Plex.
-- **Plex-avvik → På disk, ikke i Plex:** mapper som verken er i Radarr, Sonarr eller Plex kan slettes direkte fra disk. Også fra tittelvisningen («Slett mappen fra disk»). Samme bryter og skrivetilgang som duplikater, og stopper hvis mappen har endret seg siden skanning.
-- **Største filer:** tittelen er en tydelig lenke, og «Finn mindre» søker etter mindre versjoner (og bytter) rett fra listen.
+## Earlier versions (summary)
 
-## 0.10.0
-- **Bytt til mindre versjon** – «last ned først, bytt etterpå». Fra «Finn mindre versjon» velger du en utgivelse og trykker Bytt. Radarr/Sonarr laster den ned mens den store filen blir liggende. Når nedlastingen er ferdig og den eneste innvendingen er «ikke en oppgradering», slettes den gamle filen via Radarr/Sonarr og den nye importeres. Andre innvendinger stopper byttet uten at noe slettes.
-- Valgfritt etter byttet: avovervåk tittelen/sesongen eller bytt kvalitetsprofil, så den ikke oppgraderes tilbake.
-- Status for bytter i tittelvisningen og under Jobber, med historikk og mulighet til å avbryte. Følges opp hvert 5. minutt i bakgrunnen.
-- Bytte krever bryteren for sletting via Radarr/Sonarr, og beskyttede titler kan ikke byttes.
-- README oppdatert med alt som er kommet til siden 0.2: sletting, duplikater, nedlastinger, Plex-avvik, bytte og oppdateringssjekken i TrueNAS.
-
-## 0.9.0
-- Ny side **Plex-avvik**: hva som ligger på disk uten å være i Plex (med sannsynlig årsak: ikke i noe Plex-bibliotek, diskbilde/ISO, nylig lagt til, eller ikke funnet av Plex), og hva Plex peker på som mangler på disk.
-- «Be Plex skanne» starter en delvis skanning av akkurat den mappen i riktig Plex-bibliotek.
-- Mapper utenfor Radarr/Sonarr på formen «Navn (År)» får nå riktig navn og år.
-
-## 0.8.0
-- Ny side **Nedlastinger** (f.eks. tmp): hva som ligger der, om det er importert (kopi eller hardlenke i biblioteket) eller ikke, alder, og anbefaling (kan slettes / vurder / behold). Slett mapper og filer herfra (samme bryter og skrivetilgang som duplikater).
-- Bibliotekene i kapasitetsstolpen på oversikten er klikkbare: FILM → Filmer, TV → Serier, tmp → Nedlastinger.
-- **Finn mindre versjon** i tittelvisningen: søker i indekserne dine via Radarr (film) eller Sonarr (sesongpakker), viser bare utgivelser som er minst 15 % mindre, og anbefaler de beste ut fra gevinst, 1080p, målstørrelse, delere og avvisninger. Resultatene caches i 30 minutter. Bytte gjøres foreløpig i Radarr/Sonarr.
-
-## 0.7.2
-- Duplikater der filen Radarr/Sonarr kjenner skal fjernes: slettes nå via Radarr/Sonarr (moviefile/episodefile), som deretter skanner mappen på nytt og tar i bruk filen du beholder. Ingen ny nedlasting. Krever at filen som beholdes ligger i samme film-/seriemappe.
-
-## 0.7.1
-- Beskyttelse (som Barn-biblioteket og «keep»-tagger) hindrer ikke lenger opprydding i duplikater og ekstra versjoner – én fil blir alltid igjen. Kan slås på igjen under Innstillinger → Beskyttelse. Beskyttelsen mot å slette hele titler gjelder som før.
-
-## 0.7.0
-- Ny duplikatside: oppsummering øverst, faner per type med antall, søk, filter for kopier i nedlastingsmappen og sortering etter gevinst.
-- Velg hvilken fil som beholdes med ett klikk per gruppe, kryss av grupper og slett overflødige filer etter en oppsummering.
-- Sletting av duplikatfiler er av som standard og krever både en bryter i Innstillinger og at mappene er montert uten `:ro`. Filer Radarr/Sonarr kjenner slettes aldri slik, filen som beholdes blir alltid liggende, og hver fil kontrolleres (uendret siden skanning, inne i biblioteket, ikke symlenke) rett før sletting.
-
-## 0.6.1
-- Slett-knapp direkte i tittelvisningen: «Slett filmen», «Slett hele serien» og «Slett sesong N», med gevinsten på knappen.
-- Avkrysning og «Slett valgte…» vises alltid i Forslag, Filmer, Serier og på brukersidene. Er sletting av, forklarer dialogen hvor den slås på.
-- «Skrivebeskyttet / Sletting er på» nederst i menyen lenker til Innstillinger.
-
-## 0.6.0
-- Nye sider **Filmer** og **Serier**: oppsummering øverst (hvor mye som brukes, hva som aldri er sett eller ikke sett på lenge, trygge slettinger, 4K), forslag fordelt på type, «Bør ses på først» med plakater, og en filtrer- og sorterbar liste med anbefaling per tittel.
-- Ny side **Brukere** med alle som har bedt om noe i Seerr, og en egen side per bruker: hva de har bedt om, hva de har sett selv, hva ingen har sett, og hvor mye som frigjøres ved å fjerne det de ikke har sett. Filtre for «Ikke sett av brukeren», «over 12 måneder» og «Ikke sett av noen».
-- Velg titler direkte fra disse sidene og slett dem (når sletting er slått på).
-- Mindre støy i loggen: API-kall logges ikke lenger enkeltvis.
-
-## 0.5.0
-- Sletting via Radarr og Sonarr (av som standard, slås på under Innstillinger → Sletting): hele filmer, hele serier og enkeltsesonger (avovervåkes før filene slettes).
-- Oppsummering før sletting med plass som frigjøres og hva som ikke tas med, og hvorfor. Én bekreftelsesknapp.
-- Serveren avviser beskyttede titler, kontrollerer at utvalget ikke er endret siden oppsummeringen, og sjekker mappen i Radarr/Sonarr rett før hver sletting.
-- Ny side «Logg» med alle slettinger. Full oppdatering startes automatisk etterpå.
-
-## 0.4.0
-- Plakater for filmer og serier, de samme som i Plex, i forslag, titler, oversikten og tittelvisningen. Radarr/Sonarr brukes som reserve.
-- Bildene hentes av appen (Plex-token forlater aldri serveren) og lagres i `data/posters` i 30 dager.
-
-## 0.3.0
-- Appen sier fra når en ny versjon er ute: banner øverst og lenke nederst i menyen, med lenke til hva som er nytt. Sjekker GitHub-releases hver 6. time og kan slås av under Innstillinger → Oppdateringer.
-- YAML-filen bruker nå `:latest`, så TrueNAS viser «Update available» og oppdaterer med Update-knappen – uten å endre taggen.
-
-## 0.2.2
-- Rettet: skanning av store biblioteker feilet med «database is locked». Fremdrift skrives nå i minnet i stedet for til databasen mens jobben holder en skrivetransaksjon.
-- Skanneren slipper skrivelåsen minst hvert annet sekund og under pauser, så API og planlegger ikke blokkeres.
-- Ny test med 3000 filer, ekte fremdriftsrapportering og samtidige skrivere.
-
-## 0.2.1
-- Appikon (også som ikon i nettleserfanen) og skript som setter ikonet i TrueNAS Apps.
-- «Web UI»-knapp i TrueNAS via `x-portals` i YAML-filen.
-- Skjermbilder i README og tydeligere installasjonsinstruks.
-
-## 0.2.0
-- Seerr: viser hvem som ba om hver film/serie i forslag, titler og tittelvisning.
-- Filter «Etterspurt av» i forslag og titler, og oversikt per bruker (antall titler, plass, hvor mye de ikke har sett selv).
-- Forespørsler kobles via TMDB/TVDB (Radarr/Sonarr) og Plex ratingKey (titler utenfor Radarr/Sonarr, f.eks. Barn).
-- Ny poenglinje: +8 når de som ba om en tittel for over 12 måneder siden aldri har sett den. −15 hvis etterspurt siste 12 måneder (som før).
-- Avspillinger matches mot både Tautulli-visningsnavn og Plex-brukernavn.
-- Image bygges og publiseres til GitHub Container Registry med GitHub Actions.
-
-## 0.1.0
-- Første skrivebeskyttede versjon: skanning, kobling mot Radarr/Sonarr/Plex/Tautulli, forslag med forklarbar prioritet, duplikater, gevinst uten dobbelttelling.
+- **0.13** – *Swap quality* page: large movies and seasons, search the indexers for many at once, and swap several with one confirmation.
+- **0.12** – «Other» in the capacity bar opens an overview of datasets and snapshots outside the libraries (read only).
+- **0.11** – Remove Plex entries whose files are missing; delete folders that are on disk only; «Find smaller» from Largest files.
+- **0.10** – Swap to a smaller version: download first, swap afterwards, with optional unmonitor or quality profile change.
+- **0.9** – Plex differences: on disk but not in Plex (with the likely reason), and in Plex but missing on disk; ask Plex to scan a folder.
+- **0.8** – Downloads page, clickable libraries in the capacity bar, search for smaller versions through Radarr/Sonarr.
+- **0.7** – Duplicates page with filters and deletion (files Radarr/Sonarr know are deleted through them, followed by a rescan); protection can be limited to whole titles.
+- **0.6** – Movies, Series and per-user (Seerr) pages with summaries and filters; delete from those pages.
+- **0.5** – Deletion through Radarr and Sonarr (whole movies, series and single seasons), summary first, log of every action.
+- **0.4** – Posters from Plex, with Radarr/Sonarr as fallback, cached locally.
+- **0.3** – Update notice in the app; the compose file uses `:latest` so TrueNAS can update with its Update button.
+- **0.2** – Seerr requests, published images on ghcr.io, app icon and Web UI button; fixed «database is locked» during large scans.
+- **0.1** – First read-only version: scanning, linking to Radarr/Sonarr/Plex/Tautulli, explainable suggestions, duplicates and savings without double counting.

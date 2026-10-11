@@ -1,4 +1,4 @@
-"""Ende-til-ende: mock-tjenester + glisne filer på disk -> synk -> skann -> analyse -> API."""
+"""End to end: mock services + sparse files on disk -> sync -> scan -> analysis -> API."""
 import json
 import os
 import socket
@@ -9,6 +9,7 @@ import pytest
 import uvicorn
 from fastapi.testclient import TestClient
 
+from app.i18n import text
 from app import db, scanner, settings, sync
 from app.analysis import engine
 from tests import mock_services as ms
@@ -44,23 +45,23 @@ def env(tmp_path_factory):
     for mid, title, year, folder, fname, *_ in ms.MOVIES:
         _sparse(media / folder.lstrip("/") / fname, ms.SIZES[mid])
     _sparse(media / ms.EXTRA_TWIN[0].lstrip("/"), ms.EXTRA_TWIN[1])
-    (media / "FILM/Twin (2012)/Twin.2012.1080p.en.srt").write_text("1\n00:00:01 --> 00:00:02\nHei\n")
+    (media / "Movies/Twin (2012)/Twin.2012.1080p.en.srt").write_text("1\n00:00:01 --> 00:00:02\nHei\n")
     show = {s[0]: s for s in ms.SERIES}
     for eid, sid, sn, ep, fn, size in ms.EPISODES:
         _sparse(media / show[sid][3].lstrip("/") / fn, size)
     _sparse(media / ms.KIDS[0].lstrip("/"), ms.KIDS[1])
-    # Film på disk som verken Radarr eller Plex kjenner
-    _sparse(media / "FILM/Orphan (2001)/Orphan.2001.1080p.mkv", 6 * GB + 41)
-    _sparse(media / "FILM/Disc (2005)/Disc.2005.iso", 30 * GB + 42)
-    # Hardlink fra nedlastingsmappen til en film
-    (media / "tmp").mkdir()
-    os.link(media / "FILM/Hardlinked (2011)/Hardlinked.2011.mkv", media / "tmp/Hardlinked.2011.mkv")
+    # A movie on disk that neither Radarr nor Plex knows
+    _sparse(media / "Movies/Orphan (2001)/Orphan.2001.1080p.mkv", 6 * GB + 41)
+    _sparse(media / "Movies/Disc (2005)/Disc.2005.iso", 30 * GB + 42)
+    # Hardlink from the downloads folder to a movie
+    (media / "downloads").mkdir()
+    os.link(media / "Movies/Hardlinked (2011)/Hardlinked.2011.mkv", media / "downloads/Hardlinked.2011.mkv")
     # Identisk kopi (ny inode) i nedlastingsmappen
-    _sparse(media / "tmp/Copy.2013.mkv", ms.SIZES[6])
-    # Gammel nedlasting som aldri ble importert
-    _sparse(media / "tmp/Old.Download/old.mkv", 4 * GB + 99)
+    _sparse(media / "downloads/Copy.2013.mkv", ms.SIZES[6])
+    # Old download that was never imported
+    _sparse(media / "downloads/Old.Download/old.mkv", 4 * GB + 99)
     old = time.time() - 200 * 86400
-    os.utime(media / "tmp/Old.Download/old.mkv", (old, old))
+    os.utime(media / "downloads/Old.Download/old.mkv", (old, old))
 
     base = f"http://127.0.0.1:{port}"
     s = settings.get()
@@ -69,8 +70,18 @@ def env(tmp_path_factory):
     s["services"]["plex"].update(url=f"{base}/plex", token=ms.TOKEN)
     s["services"]["tautulli"].update(url=f"{base}/tautulli", api_key=ms.KEY)
     s["services"]["seerr"].update(url=f"{base}/seerr", api_key=ms.KEY, enabled=True)
+    s["libraries"] = [
+        {"name": "Movies", "host_path": "/mnt/tank/media/Movies", "kind": "movies", "protected": False},
+        {"name": "TV", "host_path": "/mnt/tank/media/TV", "kind": "series", "protected": False},
+        {"name": "Kids", "host_path": "/mnt/tank/media/Kids", "kind": "mixed", "protected": True},
+        {"name": "downloads", "host_path": "/mnt/tank/media/downloads", "kind": "downloads", "protected": False},
+    ]
     for lib in s["libraries"]:
         lib["container_path"] = str(media / lib["name"])
+    s["path_mappings"] = [{"from": f"/{n}", "to": f"/mnt/tank/media/{n}"} for n in ("Movies", "TV", "Kids")] + \
+        [{"from": "/downloads", "to": "/mnt/tank/media/downloads"}]
+    s["protection"]["tags"] = ["keep", "behold"]
+    s["protection"]["plex_labels"] = ["keep", "behold"]
     s["scanner"]["throttle_ms_per_1000"] = 0
     s["scanner"]["hash_min_size_mb"] = 1
     settings.save(s)
@@ -86,31 +97,34 @@ def env(tmp_path_factory):
 @pytest.fixture(scope="module")
 def client(env):
     from app.main import app
-    with TestClient(app) as c:
+    with TestClient(app, headers={"X-Lang": "nb"}) as c:
         yield c
 
 
 def _sugg(c, **filters):
+    """Suggestions straight from the database, with texts in Norwegian (like the UI in Norwegian)."""
+    from app.i18n import localize
     with db.conn() as conn:
-        rows = db.rows(conn, "SELECT s.*, t.name FROM suggestions s LEFT JOIN titles t ON t.key=s.title_key")
+        rows = db.rows(conn, "SELECT s.*, t.name AS tname FROM suggestions s LEFT JOIN titles t ON t.key=s.title_key")
     out = []
     for r in rows:
+        r["name"] = r.pop("tname") or r["name"]
         if all(r.get(k) == v for k, v in filters.items()):
             r["components"] = json.loads(r["components"])
-            out.append(r)
+            out.append(localize(r, "nb"))
     return out
 
 
 def test_sync_all_services_ok(env):
     for name in ("radarr", "sonarr", "plex", "tautulli", "seerr"):
-        assert not env["sync"][name].startswith("feil"), env["sync"]
-    assert env["sync"]["truenas"] == "ikke konfigurert"
+        assert not env["sync"][name].startswith("error"), env["sync"]
+    assert env["sync"]["truenas"] == "not configured"
 
 
 def test_big_unwatched_movie_is_top_low_risk(env):
     s = _sugg(None, name="Big Movie", kind="delete_title")[0]
     assert s["savings"] == 80 * GB
-    assert s["risk"] == "lav"
+    assert s["risk"] == "low"
     assert s["score"] >= 60
     labels = {c["label"] for c in s["components"]}
     assert "Aldri sett" in labels and "Plass" in labels
@@ -121,20 +135,20 @@ def test_big_unwatched_movie_is_top_low_risk(env):
 def test_popular_movie_not_recommended(env):
     s = _sugg(None, name="Popular", kind="delete_title")[0]
     assert s["score"] < 20
-    assert s["risk"] == "høy"
+    assert s["risk"] == "high"
 
 
 def test_new_movie_quarantined(env):
     s = _sugg(None, name="New", kind="delete_title")[0]
     assert any(c["key"] == "recent" and c["points"] == -40 for c in s["components"])
-    assert s["risk"] == "høy"
+    assert s["risk"] == "high"
 
 
 def test_hardlinked_movie_frees_nothing_alone(env):
     s = _sugg(None, name="Hardlinked", kind="delete_title")[0]
     assert s["savings"] == 0
     assert "hardlinker" in s["savings_note"]
-    # Plass-poeng regnes av faktisk frigjort plass, så forslaget havner lavt
+    # Space points are based on what is actually freed, so the suggestion ends up low
     space = [c for c in s["components"] if c["key"] == "space" and c["label"] == "Plass"][0]
     assert space["points"] == 0
     big = _sugg(None, name="Big Movie", kind="delete_title")[0]
@@ -146,7 +160,7 @@ def test_identical_copy_removes_download_copy(env):
     assert len(s) == 1
     with db.conn() as c:
         paths = [r[0] for r in c.execute("SELECT path FROM suggestion_files WHERE suggestion_id=?", (s[0]["id"],))]
-    assert paths == ["/mnt/pool1/tmp/Copy.2013.mkv"]
+    assert paths == ["/mnt/tank/media/downloads/Copy.2013.mkv"]
     assert s[0]["savings"] == ms.SIZES[6]
 
 
@@ -155,9 +169,9 @@ def test_versions_keep_radarr_file(env):
     assert len(s) == 1
     with db.conn() as c:
         paths = [r[0] for r in c.execute("SELECT path FROM suggestion_files WHERE suggestion_id=?", (s[0]["id"],))]
-    assert paths == ["/mnt/pool1/FILM/Twin (2012)/Twin.2012.2160p.mkv"]
+    assert paths == ["/mnt/tank/media/Movies/Twin (2012)/Twin.2012.2160p.mkv"]
     assert s[0]["savings"] == ms.EXTRA_TWIN[1]
-    # Hardlinken er ikke et duplikat
+    # The hardlink is not a duplicate
     with db.conn() as c:
         kinds = {r[0]: r[1] for r in c.execute("SELECT kind, reclaimable FROM duplicate_groups")}
     assert kinds["hardlink"] == 0
@@ -166,7 +180,7 @@ def test_versions_keep_radarr_file(env):
 def test_protection(env):
     with db.conn() as c:
         prot = {r[0]: r[1] for r in c.execute("SELECT name, protect_reason FROM titles WHERE protected=1")}
-    assert "Kids Movie" in prot and "Barn" in prot["Kids Movie"]
+    assert "Kids Movie" in prot and "Kids" in prot["Kids Movie"]
     assert "Keeper" in prot and "keep" in prot["Keeper"]
     assert not _sugg(None, name="Kids Movie")
     assert not _sugg(None, name="Keeper")
@@ -175,7 +189,7 @@ def test_protection(env):
 def test_play_fallback_by_name(env):
     with db.conn() as c:
         plays = c.execute("SELECT play_count FROM titles WHERE name='Keeper'").fetchone()[0]
-    assert plays == 1  # rating key 999 finnes ikke, men navn+år matcher
+    assert plays == 1  # rating key 999 does not exist, but name + year match
 
 
 def test_series_and_seasons_no_double_count(env, client):
@@ -202,8 +216,8 @@ def test_api_overview_and_lists(client):
     o = client.get("/api/overview").json()
     assert o["counts"]["movies"] == 10 and o["counts"]["series"] == 2 and o["counts"]["episodes"] == 6
     libs = {l["library"]: l for l in o["libraries"]}
-    # Hardlinken telles bare én gang per bibliotek
-    assert libs["tmp"]["alloc"] == ms.SIZES[5] + ms.SIZES[6] + 4 * GB + 99
+    # The hardlink is counted once per library
+    assert libs["downloads"]["alloc"] == ms.SIZES[5] + ms.SIZES[6] + 4 * GB + 99
     assert o["savings"]["freed"] > 0
     assert o["top_suggestions"][0]["score"] >= o["top_suggestions"][-1]["score"]
     lst = client.get("/api/suggestions", params={"min_score": 0, "q": "Twin"}).json()
@@ -224,7 +238,7 @@ def test_settings_mask_roundtrip(client):
     st = client.get("/api/settings").json()
     st["analysis"]["min_score"] = 25
     client.put("/api/settings", json=st)
-    assert settings.get()["services"]["radarr"]["api_key"] == ms.KEY  # ikke overskrevet med maske
+    assert settings.get()["services"]["radarr"]["api_key"] == ms.KEY  # not overwritten with the mask
     assert settings.get()["analysis"]["min_score"] == 25
 
 
@@ -247,7 +261,8 @@ def _title(name):
     with db.conn() as c:
         r = db.rows(c, "SELECT * FROM titles WHERE name=?", (name,))[0]
     r["requests"] = json.loads(r["requests"] or "[]")
-    return r
+    from app.i18n import localize
+    return localize(r, "nb")
 
 
 def test_seerr_requests_mapped_and_watched_by_username(env):
@@ -256,7 +271,7 @@ def test_seerr_requests_mapped_and_watched_by_username(env):
     # Anna så Popular: Tautulli viser «Anna» (visningsnavn) / «anna» (brukernavn), Seerr har plexUsername «anna»
     pop = _title("Popular")
     assert pop["requests"][0]["watched"] is True
-    # Kids Movie finnes ikke i Radarr – koblet via Plex ratingKey
+    # Kids Movie is not in Radarr – linked through the Plex ratingKey
     assert _title("Kids Movie")["requests"][0]["by"] == "Anna"
     assert _title("Old Show")["requested_by"] == "Bjørn B."
 
@@ -275,7 +290,7 @@ def test_seerr_affects_score_transparently(env):
 def test_requesters_api_and_filter(client):
     r = {x["name"]: x for x in client.get("/api/requesters").json()["items"]}
     assert r["Bjørn B."]["titles"] == 2 and r["Bjørn B."]["not_watched_by_requester"] == 2
-    assert r["Anna"]["titles"] == 2 and r["Anna"]["not_watched_by_requester"] == 1  # Kids Movie ikke sett
+    assert r["Anna"]["titles"] == 2 and r["Anna"]["not_watched_by_requester"] == 1  # Kids Movie not watched
     lst = client.get("/api/suggestions", params={"requested_by": "Bjørn B.", "min_score": 0}).json()
     names = {i["title_name"] for i in lst["items"]}
     assert names == {"Big Movie", "Old Show"}
@@ -291,11 +306,11 @@ def test_posters_from_plex_cached_and_radarr_fallback(client):
     assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
     assert "max-age" in r.headers["cache-control"]
     client.get(f"/api/poster/{key}")
-    assert ms.POSTER_HITS["plex"] == before + 1          # andre gang fra cache
-    # Keeper har ingen plakat i Plex -> hentes fra Radarr
+    assert ms.POSTER_HITS["plex"] == before + 1          # second time from the cache
+    # Keeper has no poster in Plex -> fetched from Radarr
     r = client.get(f"/api/poster/{_title('Keeper')['key']}")
     assert r.status_code == 200 and ms.POSTER_HITS["radarr"] >= 1
-    # Serie med plakat på serie-elementet i Plex
+    # Series with the poster on the show item in Plex
     assert client.get(f"/api/poster/{_title('Old Show')['key']}").status_code == 200
     assert client.get("/api/poster/finnes:ikke").status_code == 404
 
@@ -325,14 +340,14 @@ def test_requester_page(client):
     assert s["unwatched_delete"]["count"] == 2 and s["unwatched_delete"]["freed"] > 0
     anna = client.get("/api/requesters/Anna", params={"view": "unwatched"}).json()
     assert [i["name"] for i in anna["items"]] == ["Kids Movie"] and anna["items"][0]["protected"]
-    assert anna["summary"]["unwatched_delete"]["count"] == 0  # beskyttet tas ikke med
+    assert anna["summary"]["unwatched_delete"]["count"] == 0  # protected titles are left out
 
 
 def test_find_smaller_movie_versions(client):
     r = client.get(f"/api/releases/{_title('Big Movie')['key']}").json()
     assert r["service"] == "radarr" and r["current_size"] == 80 * GB and r["total"] == 6
     names = [x["title"] for x in r["releases"]]
-    assert "Big.Movie.2010.2160p.REMUX" not in names                # ikke mindre
+    assert "Big.Movie.2010.2160p.REMUX" not in names                # not smaller
     top = r["releases"][0]
     assert top["title"] == "Big.Movie.2010.1080p.BluRay.x264" and top["recommended"]
     assert any("mindre" in x for x in top["reasons"])
@@ -341,7 +356,7 @@ def test_find_smaller_movie_versions(client):
     banned = next(x for x in r["releases"] if "HDTV" in x["title"])
     assert "Release is banned" in banned["warnings"]
     assert not any("preference" in w for x in r["releases"] for w in x["warnings"])  # forventet avvisning skjules
-    # Andre gang fra cache – ingen nytt søk mot indekserne
+    # Second time from the cache – no new indexer search
     n = len(ms.RELEASE_CALLS)
     assert client.get(f"/api/releases/{_title('Big Movie')['key']}").json()["cached"] is True
     assert len(ms.RELEASE_CALLS) == n
@@ -349,7 +364,7 @@ def test_find_smaller_movie_versions(client):
 
 def test_find_smaller_season_pack(client):
     key = _title("Hot Show")["key"]
-    assert client.get(f"/api/releases/{key}").status_code == 400      # sesong må velges
+    assert client.get(f"/api/releases/{key}").status_code == 400      # a season must be chosen
     r = client.get(f"/api/releases/{key}", params={"season": 1}).json()
     assert r["episode_releases"] == 1 and [x["title"] for x in r["releases"]] == ["Hot.Show.S01.1080p.WEB.x265"]
     assert r["episodes"] == 2
@@ -364,33 +379,33 @@ def test_swap_download_first_then_replace(client):
     _enable_actions(client, True)
     try:
         sw = client.post("/api/swaps", json=body).json()
-        assert sw["state"] == "venter" and sw["old_size"] == 80 * GB
+        assert sw["state"] == "waiting" and sw["old_size"] == 80 * GB
         assert ("POST", "/radarr/api/v3/release", {}, {"guid": rel["guid"], "indexerId": 1}) in ms.WRITES
         assert client.post("/api/swaps", json=body).status_code == 400          # ett bytte om gangen
         n = len(ms.WRITES)
         ms.QUEUE[:] = [{"title": rel["title"], "downloadId": "DL1", "size": 100, "sizeleft": 40, "status": "downloading",
                         "trackedDownloadState": "downloading", "trackedDownloadStatus": "ok"}]
         sw = client.post(f"/api/swaps/{sw['id']}/poll").json()
-        assert sw["state"] == "laster_ned" and sw["download_id"] == "DL1" and len(ms.WRITES) == n
-        # Ferdig, men med en avvisning som ikke handler om oppgradering → ingenting slettes
+        assert sw["state"] == "downloading" and sw["download_id"] == "DL1" and len(ms.WRITES) == n
+        # Finished, but with a rejection that is not about upgrading → nothing is deleted
         ms.QUEUE[0].update(sizeleft=0, status="completed", trackedDownloadState="importPending")
         ms.MANUAL[:] = [{"path": "/downloads/x/Big.mkv", "quality": {}, "rejections": [{"reason": "Sample"}]}]
         sw = client.post(f"/api/swaps/{sw['id']}/poll").json()
-        assert sw["state"] == "trenger_hjelp" and "Sample" in sw["message"] and len(ms.WRITES) == n
-        # Nytt forsøk der bare «ikke en oppgradering» står i veien
+        assert sw["state"] == "needs_help" and "Sample" in sw["message"] and len(ms.WRITES) == n
+        # New attempt where only «not an upgrade» is in the way
         sw = client.post("/api/swaps", json=body).json()
         ms.MANUAL[:] = [{"path": "/downloads/x/Big.mkv", "quality": {"quality": {"id": 7}},
                          "rejections": [{"reason": "Not an upgrade for existing movie file(s)"}]}]
         sw = client.post(f"/api/swaps/{sw['id']}/poll").json()
-        assert sw["state"] == "importerer"
+        assert sw["state"] == "importing"
         new = ms.WRITES[n:]
         assert ("DELETE", "/radarr/api/v3/moviefile/301", {}, None) in new
         imp = next(w for w in new if w[0] == "POST" and w[3].get("name") == "ManualImport")
         assert imp[3]["files"][0]["path"] == "/downloads/x/Big.mkv" and imp[3]["files"][0]["movieId"] == 1
-        assert new.index(("DELETE", "/radarr/api/v3/moviefile/301", {}, None)) < new.index(imp)  # slett før import
+        assert new.index(("DELETE", "/radarr/api/v3/moviefile/301", {}, None)) < new.index(imp)  # delete before import
         ms.QUEUE[:] = []
         sw = client.post(f"/api/swaps/{sw['id']}/poll").json()
-        assert sw["state"] == "ferdig" and "Avovervåket" in sw["message"]
+        assert sw["state"] == "done" and "Avovervåket" in sw["message"]
         put = next(w for w in ms.WRITES if w[0] == "PUT" and w[1] == "/radarr/api/v3/movie/1")
         assert put[3]["monitored"] is False
         assert len(client.get(f"/api/swaps?key={key}").json()["items"]) == 2
@@ -420,7 +435,7 @@ def test_quality_overview_and_batch_swap(client):
         res = client.post("/api/swaps/batch", json={"items": [item, {**item, "key": "movie:r:999"}], "after_swap": "unmonitor"}).json()
         assert res["started"] == 1 and res["failed"] == 1
         big = next(i for i in client.get("/api/quality").json()["items"] if i["name"] == "Big Movie")
-        assert big["swap"]["state"] == "venter"
+        assert big["swap"]["state"] == "waiting"
         client.post(f"/api/swaps/{big['swap']['id']}/cancel")
     finally:
         _enable_actions(client, False)
@@ -436,10 +451,10 @@ def _enable_actions(client, on):
 def test_downloads_overview(client):
     r = client.get("/api/downloads").json()
     by = {i["name"]: i for i in r["items"]}
-    assert by["Hardlinked.2011.mkv"]["status"] == "hardlenket" and by["Hardlinked.2011.mkv"]["freed"] == 0
-    assert by["Copy.2013.mkv"]["status"] == "kopiert" and by["Copy.2013.mkv"]["title_name"] == "Copy"
+    assert by["Hardlinked.2011.mkv"]["status"] == "hardlinked" and by["Hardlinked.2011.mkv"]["freed"] == 0
+    assert by["Copy.2013.mkv"]["status"] == "copied" and by["Copy.2013.mkv"]["title_name"] == "Copy"
     old = by["Old.Download"]
-    assert old["status"] == "ikke_importert" and old["advice"] == "vurder" and old["is_dir"]
+    assert old["status"] == "not_imported" and old["advice"] == "consider" and old["is_dir"]
     assert r["summary"]["count"] == 3
 
 
@@ -450,15 +465,15 @@ def test_plex_check(client):
     assert "Orphan" in names and "Disc" in names
     assert "ISO" in names["Disc"]["reason"]
     assert "Kids Movie" not in names and "Big Movie" not in names
-    assert not any("tmp" in g["folder"] for g in r["items"])            # nedlastingsmappen tas ikke med
+    assert not any("/downloads" in g["folder"] for g in r["items"])            # the downloads folder is left out
     m = client.get("/api/plex-check", params={"view": "missing"}).json()
-    assert [g["name"] for g in m["items"]] == ["Gone"] and m["items"][0]["files"][0]["path"] == "/mnt/pool1/FILM/Gone (1999)/Gone.1999.mkv"
-    res = client.post("/api/plex-check/rescan", json={"folder": "/mnt/pool1/FILM/Orphan (2001)"}).json()
-    assert res["ok"] and ms.PLEX_REFRESH[-1] == ("1", "/FILM/Orphan (2001)")
-    assert client.post("/api/plex-check/rescan", json={"folder": "/mnt/pool1/tmp/x"}).status_code == 400
+    assert [g["name"] for g in m["items"]] == ["Gone"] and m["items"][0]["files"][0]["path"] == "/mnt/tank/media/Movies/Gone (1999)/Gone.1999.mkv"
+    res = client.post("/api/plex-check/rescan", json={"folder": "/mnt/tank/media/Movies/Orphan (2001)"}).json()
+    assert res["ok"] and ms.PLEX_REFRESH[-1] == ("1", "/Movies/Orphan (2001)")
+    assert client.post("/api/plex-check/rescan", json={"folder": "/mnt/tank/media/downloads/x"}).status_code == 400
 
 
-# ------------------------------------------------------------------ sletting (kjøres sist)
+# ------------------------------------------------------------------ deletion (runs last)
 
 def _sid(name, kind, scope=None):
     for s in _sugg(None, name=name, kind=kind):
@@ -498,7 +513,7 @@ def test_delete_plan_rules(client, no_refresh):
     p = client.post("/api/actions/plan", json={"ids": ids}).json()
     by = {i["id"]: i for i in p["items"]}
     assert by[ids[0]]["executable"] and by[ids[0]]["service"] == "radarr"
-    assert not by[ids[1]]["executable"] and "kvalitetsprofil" in by[ids[1]]["reason"]
+    assert not by[ids[1]]["executable"] and "Bytt kvalitet" in by[ids[1]]["reason"]
     assert by[ids[2]]["executable"] and by[ids[2]]["service"] == "sonarr"
     assert not by[ids[3]]["executable"] and "hele serien" in by[ids[3]]["reason"]
     assert p["executable"] == 2 and p["freed"] > 0
@@ -509,11 +524,11 @@ def test_delete_plan_rules(client, no_refresh):
 
 def test_protected_never_executable():
     from app import actions
-    d = actions._describe({"id": "x", "label": "K", "location": "", "kind": "delete_title", "risk": "lav",
+    d = actions._describe({"id": "x", "label": "K", "location": "", "kind": "delete_title", "risk": "low",
                            "savings": 1, "title_key": "k", "scope": "title"},
-                          {"protected": 1, "protect_reason": "Biblioteket Barn er beskyttet", "radarr_id": 9,
+                          {"protected": 1, "protect_reason": "Biblioteket Kids er beskyttet", "radarr_id": 9,
                            "sonarr_id": None})
-    assert d["executable"] is False and "Barn" in d["reason"]
+    assert d["executable"] is False and "Kids" in text(d["reason"], "nb")
 
 
 def test_delete_movie_via_radarr(client, no_refresh):
@@ -521,12 +536,12 @@ def test_delete_movie_via_radarr(client, no_refresh):
     big = _sid("Big Movie", "delete_title")
     p = client.post("/api/actions/plan", json={"ids": [big]}).json()
     r = client.post("/api/actions/execute", json={"ids": [big], "token": p["token"]}).json()
-    assert r["done"] == 1 and r["results"][0]["status"] == "utført"
+    assert r["done"] == 1 and r["results"][0]["status"] == "done"
     assert ("DELETE", "/radarr/api/v3/movie/1", {"deleteFiles": "true", "addImportExclusion": "false"}, None) in ms.WRITES
     assert r["freed_estimate"] == 80 * GB
     assert no_refresh == ["refresh"]
     h = client.get("/api/actions/history").json()["items"]
-    assert h[0]["title"] == "Big Movie" and h[0]["status"] == "utført"
+    assert h[0]["title"] == "Big Movie" and h[0]["status"] == "done"
 
 
 def test_delete_season_unmonitors_then_deletes_files(client, no_refresh):
@@ -541,23 +556,23 @@ def test_delete_season_unmonitors_then_deletes_files(client, no_refresh):
     assert {s["seasonNumber"]: s["monitored"] for s in put[3]["seasons"]} == {1: True, 2: False}
     bulk = [w for w in ms.WRITES if w[1].endswith("/bulk")][0]
     assert sorted(bulk[3]["episodeFileIds"]) == [13, 14]
-    assert ms.WRITES.index(put) < ms.WRITES.index(bulk)  # avovervåk før sletting
+    assert ms.WRITES.index(put) < ms.WRITES.index(bulk)  # unmonitor before deleting
 
 
 def test_delete_stops_when_folder_changed(client, no_refresh):
     _enable(client)
     twin = _sid("Twin", "delete_title")
-    ms.PATH_OVERRIDE[("movie", 3)] = "/FILM/Noe annet (2012)"
+    ms.PATH_OVERRIDE[("movie", 3)] = "/Movies/Noe annet (2012)"
     ms.WRITES.clear()
     p = client.post("/api/actions/plan", json={"ids": [twin]}).json()
     r = client.post("/api/actions/execute", json={"ids": [twin], "token": p["token"]}).json()
-    assert r["results"][0]["status"] == "feilet" and "stemmer ikke" in r["results"][0]["detail"]
+    assert r["results"][0]["status"] == "failed" and "stemmer ikke" in r["results"][0]["detail"]
     assert not [w for w in ms.WRITES if w[0] == "DELETE"]
     assert no_refresh == []
     ms.PATH_OVERRIDE.clear()
 
 
-# ------------------------------------------------------------------ duplikater (endrer filer på disk – kjøres helt sist)
+# ------------------------------------------------------------------ duplicates (changes files on disk – runs last of all)
 
 def _enable_files(client, on=True):
     st = client.get("/api/settings").json()
@@ -591,7 +606,7 @@ def test_duplicate_delete_disabled(client, no_refresh):
 
 
 def test_duplicate_managed_file_swapped_via_radarr(client, no_refresh):
-    """Behold den uadministrerte versjonen: Radarr sletter sin fil og skanner mappen på nytt."""
+    """Keep the unmanaged version: Radarr deletes its file and rescans the folder."""
     import os
     _enable_files(client)
     g = client.get("/api/duplicates", params={"kind": "versions"}).json()["items"][0]
@@ -607,11 +622,11 @@ def test_duplicate_managed_file_swapped_via_radarr(client, no_refresh):
     cmd = [w for w in ms.WRITES if w[0] == "POST"][0]
     assert cmd[3] == {"name": "RescanMovie", "movieId": 3}
     assert ms.WRITES.index(("DELETE", "/radarr/api/v3/moviefile/303", {}, None)) < ms.WRITES.index(cmd)
-    # Appen rørte ikke filene på disk selv
+    # The app did not touch the files on disk itself
     root = _media_root()
-    assert os.path.exists(f"{root}/FILM/Twin (2012)/Twin.2012.1080p.mkv")
+    assert os.path.exists(f"{root}/Movies/Twin (2012)/Twin.2012.1080p.mkv")
     h = client.get("/api/actions/history").json()["items"][0]
-    assert h["service"] == "radarr" and h["status"] == "utført"
+    assert h["service"] == "radarr" and h["status"] == "done"
 
 
 def test_duplicate_managed_refused_when_keep_outside_folder(client, no_refresh):
@@ -629,18 +644,18 @@ def test_duplicate_delete_identical_copy_from_disk(client, no_refresh):
     g = client.get("/api/duplicates", params={"kind": "identical"}).json()["items"][0]
     p = client.post("/api/duplicates/plan", json={"groups": [{"id": g["id"]}]}).json()
     it = p["items"][0]
-    assert it["executable"] and it["keep"] == "/mnt/pool1/FILM/Copy (2013)/Copy.2013.mkv"
-    assert [f["path"] for f in it["files"]] == ["/mnt/pool1/tmp/Copy.2013.mkv"] and it["warn_downloads"]
+    assert it["executable"] and it["keep"] == "/mnt/tank/media/Movies/Copy (2013)/Copy.2013.mkv"
+    assert [f["path"] for f in it["files"]] == ["/mnt/tank/media/downloads/Copy.2013.mkv"] and it["warn_downloads"]
     assert p["freed"] == ms.SIZES[6]
     root = _media_root()
-    assert os.path.exists(f"{root}/tmp/Copy.2013.mkv")
+    assert os.path.exists(f"{root}/downloads/Copy.2013.mkv")
     r = client.post("/api/duplicates/execute", json={"groups": [{"id": g["id"]}], "token": p["token"]}).json()
     assert r["done"] == 1, r
-    assert not os.path.exists(f"{root}/tmp/Copy.2013.mkv")
-    assert os.path.exists(f"{root}/FILM/Copy (2013)/Copy.2013.mkv")  # beholdt
+    assert not os.path.exists(f"{root}/downloads/Copy.2013.mkv")
+    assert os.path.exists(f"{root}/Movies/Copy (2013)/Copy.2013.mkv")  # beholdt
     assert no_refresh == ["refresh"]
     h = client.get("/api/actions/history").json()["items"][0]
-    assert h["service"] == "filsystem" and h["status"] == "utført"
+    assert h["service"] == "disk" and h["status"] == "done"
 
 
 def test_duplicate_delete_refuses_changed_file(client, no_refresh):
@@ -649,10 +664,10 @@ def test_duplicate_delete_refuses_changed_file(client, no_refresh):
     g = client.get("/api/duplicates", params={"kind": "versions"}).json()["items"][0]
     p = client.post("/api/duplicates/plan", json={"groups": [{"id": g["id"]}]}).json()
     assert p["items"][0]["executable"]
-    extra = f"{_media_root()}/FILM/Twin (2012)/Twin.2012.2160p.mkv"
+    extra = f"{_media_root()}/Movies/Twin (2012)/Twin.2012.2160p.mkv"
     os.utime(extra, (1_000_000_000, 1_000_000_000))  # endres etter skanning
     r = client.post("/api/duplicates/execute", json={"groups": [{"id": g["id"]}], "token": p["token"]})
-    # Planen bygges på nytt ved utførelse; endringen gjør filen ikke-slettbar -> token avviker eller filen avvises
+    # The plan is rebuilt at execution; the change makes the file undeletable -> the token differs or the file is refused
     if r.status_code == 200:
         assert r.json()["done"] == 0
     else:
@@ -663,32 +678,32 @@ def test_duplicate_delete_refuses_changed_file(client, no_refresh):
 
 def test_duplicate_protection_setting(monkeypatch):
     from app import dupes
-    lib = {"name": "Barn", "host_path": "/mnt/pool1/Barn", "container_path": "/x", "protected": True}
+    lib = {"name": "Kids", "host_path": "/mnt/tank/media/Kids", "container_path": "/x", "protected": True}
     s = settings.get()
     s["protection"]["include_duplicates"] = False
     monkeypatch.setattr(settings, "get", lambda: s)
     assert dupes.protection_applies() is False
-    # Med beskyttelse av for duplikater stopper ikke beskyttet tittel/bibliotek sjekken
-    r = dupes._check_file({"path": "/mnt/pool1/Barn/a.mkv"}, {"size": 1, "mtime": 0, "inode": 1}, set(), False)
+    # With protection off for duplicates, a protected title/library does not stop the check
+    r = dupes._check_file({"path": "/mnt/tank/media/Kids/a.mkv"}, {"size": 1, "mtime": 0, "inode": 1}, set(), False)
     assert r is None or "beskyttet" not in r
     s["protection"]["include_duplicates"] = True
     assert dupes.protection_applies() is True
-    r = dupes._check_file({"path": "/mnt/pool1/Barn/a.mkv"}, {"size": 1, "mtime": 0, "inode": 1}, set(), True)
-    assert "beskyttet" in r
+    r = dupes._check_file({"path": "/mnt/tank/media/Kids/a.mkv"}, {"size": 1, "mtime": 0, "inode": 1}, set(), True)
+    assert "beskyttet" in text(r, "nb")
 
 
 
 def test_downloads_delete_folder(client, no_refresh):
     import os
     _enable_files(client)
-    path = "/mnt/pool1/tmp/Old.Download"
-    p = client.post("/api/downloads/plan", json={"paths": [path, "/mnt/pool1/FILM/Big Movie (2010)"]}).json()
+    path = "/mnt/tank/media/downloads/Old.Download"
+    p = client.post("/api/downloads/plan", json={"paths": [path, "/mnt/tank/media/Movies/Big Movie (2010)"]}).json()
     assert p["count"] == 1 and p["items"][1]["ok"] is False
-    r = client.post("/api/downloads/execute", json={"paths": [path, "/mnt/pool1/FILM/Big Movie (2010)"], "token": p["token"]}).json()
+    r = client.post("/api/downloads/execute", json={"paths": [path, "/mnt/tank/media/Movies/Big Movie (2010)"], "token": p["token"]}).json()
     assert r["done"] == 1
     root = _media_root()
-    assert not os.path.exists(f"{root}/tmp/Old.Download")
-    assert os.path.exists(f"{root}/FILM/Big Movie (2010)")
+    assert not os.path.exists(f"{root}/downloads/Old.Download")
+    assert os.path.exists(f"{root}/Movies/Big Movie (2010)")
 
 
 def test_plex_remove_missing_item(client, no_refresh):
@@ -698,7 +713,7 @@ def test_plex_remove_missing_item(client, no_refresh):
     assert client.post("/api/plex-check/remove/execute", json={"keys": ["movie:199"], "token": p["token"]}).status_code == 403
     _enable(client, True)
     try:
-        # Big Movie finnes på disk → ingen kall
+        # Big Movie exists on disk → no calls
         p = client.post("/api/plex-check/remove/plan", json={"keys": ["movie:199", "movie:101"]}).json()
         bad = next(i for i in p["items"] if i["key"] == "movie:101")
         assert not bad["ok"] and "finnes" in bad["reason"]
@@ -721,7 +736,7 @@ def test_delete_orphan_folder_from_disk(client, no_refresh):
         assert ok["ok"] and ok["freed"] == 6 * GB + 41 and p["count"] == 1
         assert "Radarr" in next(i for i in p["items"] if i["key"] != orphan)["reason"]
         # ny fil siden skanning → stopper
-        extra = root / "FILM/Orphan (2001)/ny.nfo"
+        extra = root / "Movies/Orphan (2001)/ny.nfo"
         extra.write_text("x")
         p2 = client.post("/api/plex-check/delete/plan", json={"keys": [orphan]}).json()
         assert not p2["items"][0]["ok"] and "endret" in p2["items"][0]["reason"]
@@ -729,7 +744,7 @@ def test_delete_orphan_folder_from_disk(client, no_refresh):
         assert client.post("/api/plex-check/delete/execute", json={"keys": [orphan], "token": "feil"}).status_code == 409
         p = client.post("/api/plex-check/delete/plan", json={"keys": [orphan]}).json()
         r = client.post("/api/plex-check/delete/execute", json={"keys": [orphan], "token": p["token"]}).json()
-        assert r["done"] == 1 and not (root / "FILM/Orphan (2001)").exists() and (root / "FILM").exists()
+        assert r["done"] == 1 and not (root / "Movies/Orphan (2001)").exists() and (root / "Movies").exists()
     finally:
         _enable_files(client, False)
 
@@ -739,21 +754,83 @@ def test_other_storage_breakdown(client):
     assert client.get("/api/other-storage").json()["available"] is False
     lib_total = client.get("/api/other-storage").json()["libs_total"]
     with _db.conn() as c:
-        _db.kv_set(c, "truenas", {"pool": {"name": "pool1", "size": 1000 * GB, "allocated": lib_total + 300 * GB, "free": 100 * GB},
+        _db.kv_set(c, "truenas", {"pool": {"name": "tank", "size": 1000 * GB, "allocated": lib_total + 300 * GB, "free": 100 * GB},
                                   "datasets": [
-                                      {"name": "pool1", "mountpoint": "/mnt/pool1", "used": lib_total + 280 * GB,
+                                      {"name": "tank", "mountpoint": "/mnt/tank", "used": lib_total + 280 * GB,
                                        "referenced": lib_total + 50 * GB, "usedbysnapshots": 30 * GB},
-                                      {"name": "pool1/.ix-apps", "mountpoint": "/mnt/.ix-apps", "used": 200 * GB,
+                                      {"name": "tank/.ix-apps", "mountpoint": "/mnt/.ix-apps", "used": 200 * GB,
                                        "referenced": 200 * GB, "usedbysnapshots": 0}],
                                   "fetched": 1})
     try:
         r = client.get("/api/other-storage").json()
         assert r["available"] and r["other"] == 300 * GB and r["snapshots"] == 30 * GB
         top = r["items"][0]
-        assert top["name"] == "pool1/.ix-apps" and top["kind"].startswith("TrueNAS-apper")
-        root = next(i for i in r["items"] if i["name"] == "pool1")
-        assert root["other"] == 50 * GB and set(root["libraries"]) >= {"FILM", "TV"}
+        assert top["name"] == "tank/.ix-apps" and top["kind"].startswith("TrueNAS-apper")
+        root = next(i for i in r["items"] if i["name"] == "tank")
+        assert root["other"] == 50 * GB and set(root["libraries"]) >= {"Movies", "TV"}
         assert r["overhead"] == 300 * GB - 280 * GB
     finally:
         with _db.conn() as c:
             _db.kv_set(c, "truenas", None)
+
+
+# ------------------------------------------------------------------ 1.0: language, setup, overview
+
+def test_language_follows_header(client):
+    big = _title("Big Movie")["key"]
+    nb = client.get(f"/api/titles/{big}").json()["suggestions"][0]
+    en = client.get(f"/api/titles/{big}", headers={"X-Lang": "en"}).json()["suggestions"][0]
+    assert nb["label"] == "Slett filmen" and en["label"] == "Delete the movie"
+    assert any(c["label"] == "Aldri sett" for c in nb["components"])
+    assert any(c["label"] == "Never watched" for c in en["components"])
+    # Accept-Language works too, and errors are translated
+    r = client.get("/api/titles/finnes:ikke", headers={"X-Lang": "", "Accept-Language": "en-GB,en;q=0.8"})
+    assert r.status_code == 404 and r.json()["detail"] == "Title not found"
+    assert client.get("/api/titles/finnes:ikke").json()["detail"] == "Fant ikke tittelen"
+    # CSV follows the language
+    assert client.get("/api/export/suggestions.csv", headers={"X-Lang": "en"}).text.lstrip("﻿").startswith("score,risk,action")
+
+
+def test_overview_recommended_and_areas(client):
+    o = client.get("/api/overview").json()
+    rec, all_ = o["savings"]["recommended"], o["savings"]
+    assert rec["min_score"] == 50 and 0 < rec["freed"] <= all_["freed"]
+    a = o["areas"]
+    assert a["duplicates"]["freed"] > 0 and "total" in a["downloads"] and a["quality"]["count"] >= 1
+    assert a["plex"]["available"] and a["plex"]["not_in_plex"]["groups"] >= 1
+    r = client.get("/api/suggestions", params={"recommended": "true"}).json()
+    assert r["items"] and all(s["score"] >= 50 and s["risk"] != "high" for s in r["items"])
+
+
+def test_setup_checklist_and_path_suggestions(client):
+    from app import db as _db
+    st = client.get("/api/setup", headers={"X-Lang": "en"}).json()
+    steps = {s["id"]: s for s in st["steps"]}
+    assert steps["libraries"]["done"] and steps["services"]["done"] and steps["refresh"]["done"]
+    assert steps["paths"]["done"], st["paths"]
+    # A root folder the mappings do not cover gets a suggestion from the folder name
+    with _db.conn() as c:
+        roots = _db.kv_get(c, "root_folders", {})
+        _db.kv_set(c, "root_folders", {**roots, "radarr": roots.get("radarr", []) + ["/data/media/Movies"]})
+    try:
+        st = client.get("/api/setup").json()
+        p = next(x for x in st["paths"] if x["path"] == "/data/media/Movies")
+        assert not p["ok"] and p["suggestion"] == {"from": "/data/media/Movies", "to": "/mnt/tank/media/Movies", "library": "Movies"}
+        assert not next(s for s in st["steps"] if s["id"] == "paths")["done"]
+    finally:
+        with _db.conn() as c:
+            _db.kv_set(c, "root_folders", roots)
+
+
+def test_legacy_status_values_are_migrated(client):
+    from app import actions as _actions, db as _db, swaps as _swaps
+    with _db.conn() as c:
+        sid = c.execute("INSERT INTO swaps(title_key, state, log) VALUES('x', 'trenger_hjelp', '[]')").lastrowid
+        aid = c.execute("INSERT INTO actions(ts, status, detail) VALUES(1, 'utført', 'gammel tekst')").lastrowid
+    _swaps.init()
+    _actions.init()
+    with _db.conn() as c:
+        assert c.execute("SELECT state FROM swaps WHERE id=?", (sid,)).fetchone()[0] == "needs_help"
+        assert c.execute("SELECT status FROM actions WHERE id=?", (aid,)).fetchone()[0] == "done"
+        c.execute("DELETE FROM swaps WHERE id=?", (sid,))
+        c.execute("DELETE FROM actions WHERE id=?", (aid,))

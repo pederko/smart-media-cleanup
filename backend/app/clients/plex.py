@@ -1,9 +1,10 @@
-"""Plex Media Server. Kun lesing. JSON via Accept-header, paginering med X-Plex-Container-*."""
+"""Plex Media Server. Read only. JSON via the Accept header, paging with X-Plex-Container-*."""
 from __future__ import annotations
 
 import json
 from typing import Callable
 
+from ..i18n import L
 from .base import ServiceError, get_json
 
 PAGE = 500
@@ -11,7 +12,7 @@ PAGE = 500
 
 def _cfg(cfg: dict) -> tuple[str, dict]:
     if not cfg.get("url") or not cfg.get("token"):
-        raise ServiceError("URL eller token mangler")
+        raise ServiceError(L("URL or token is missing", "URL eller token mangler"))
     return cfg["url"].rstrip("/"), {"X-Plex-Token": cfg["token"], "Accept": "application/json"}
 
 
@@ -46,7 +47,7 @@ def _parts(item: dict, map_path: Callable) -> list[tuple]:
 
 
 def _labelled_keys(base: str, h: dict, section: str, type_: int, wanted: set[str]) -> dict[str, list[str]]:
-    """ratingKey -> beskyttelsesetiketter. Bruker filter-endepunktet, som er stabilt på tvers av versjoner."""
+    """ratingKey -> protection labels. Uses the filter endpoint, which is stable across versions."""
     if not wanted:
         return {}
     try:
@@ -70,7 +71,8 @@ def fetch(cfg: dict, map_path: Callable, protect_labels: list[str],
     for i, sec in enumerate(sections):
         key, stype, title = str(sec["key"]), sec.get("type"), sec.get("title")
         libs.append({"key": key, "title": title, "type": stype,
-                     "locations": [map_path(l.get("path")) for l in sec.get("Location", [])]})
+                     "locations": [map_path(l.get("path")) for l in sec.get("Location", [])],
+                     "raw_locations": [l.get("path") for l in sec.get("Location", []) if l.get("path")]})
         if progress:
             progress(i / max(1, len(sections)), f"Plex: {title}")
         if stype == "movie":

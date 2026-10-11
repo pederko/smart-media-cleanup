@@ -7,7 +7,7 @@ def test_version_compare():
     assert not updates.is_newer("0.3.0", "0.3.0")
     assert not updates.is_newer("0.2.9", "0.3.0")
     assert not updates.is_newer(None, "0.3.0")
-    assert updates.is_newer("0.3.1", "0.3.0-edge")  # edge-bygg sammenlignes på grunnversjonen
+    assert updates.is_newer("0.3.1", "0.3.0-edge")  # edge builds are compared on the base version
 
 
 def test_check_reports_new_release_and_caches(monkeypatch):

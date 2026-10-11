@@ -1,3 +1,6 @@
+import { getLang } from "./i18n";
+
+export type Risk = "low" | "medium" | "high";
 export type Component = { key: string; label: string; points: number; detail: string };
 
 export type Suggestion = {
@@ -5,11 +8,12 @@ export type Suggestion = {
   kind: string;
   title_key: string | null;
   scope: string;
-  action: string;
-  label: string;
+  action: string;          // delete | replace | remove
+  label: string;           // what to do, e.g. «Delete the movie»
+  name: string | null;     // what it is about (title, file or folder)
   location: string;
   score: number;
-  risk: "lav" | "middels" | "høy";
+  risk: Risk;
   size: number;
   savings: number;
   savings_note: string;
@@ -37,20 +41,28 @@ export type Requester = { name: string; titles: number; bytes: number; not_watch
 
 export type SuggestionDetail = Suggestion & {
   files: { path: string; claim: number; size: number; alloc: number; nlink: number; mtime: number; season: number | null; episode: number | null; is_extra: number }[];
-  overlaps: { id: string; label: string; kind: string; action: string }[];
+  overlaps: { id: string; label: string; name: string | null; kind: string; action: string }[];
 };
 
-export type Savings = { freed: number; held: number; count: number; files: number; naive_sum?: number };
+export type Savings = { freed: number; held: number; count: number; files: number; naive_sum?: number; by_library?: Record<string, number> };
 
-export type Job = { id: number; kind: string; status: string; progress: number; message: string; started: number | null; finished: number | null; error: string | null; log: string | null };
+export type Job = { id: number; kind: string; status: string; progress: number; message: string; started: number | null;
+  finished: number | null; error: string | null; log: string | null };
+
+export type Status = {
+  version: string; read_only: boolean; actions_enabled: boolean; files_enabled: boolean; writable: Record<string, boolean>;
+  services: Record<string, { ok: boolean; configured?: boolean; message?: string; checked?: number; last_success?: number | null; count?: number | null }>;
+  last_sync: number | null; last_scan: { time: number; files: number; bytes: number; duration: number; full: boolean; missing: string[]; stat_calls: number } | null;
+  last_analysis: { time: number; suggestions: number } | null; libraries: number; running: Job[]; active_swaps: number;
+};
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, { headers: { "Content-Type": "application/json" }, ...init });
+  const r = await fetch(url, { ...init, headers: { "Content-Type": "application/json", "X-Lang": getLang(), ...(init?.headers ?? {}) } });
   if (!r.ok) {
     let msg = `${r.status} ${r.statusText}`;
     try {
       const j = await r.json();
-      if (j.detail) msg = String(j.detail);
+      if (j.detail) msg = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
     } catch { /* ignore */ }
     throw new Error(msg);
   }
@@ -63,9 +75,9 @@ export const api = {
   put: <T,>(url: string, body: unknown) => req<T>(url, { method: "PUT", body: JSON.stringify(body) }),
 };
 
-export function qs(params: Record<string, string | number | undefined | null>) {
+export function qs(params: Record<string, string | number | boolean | undefined | null>) {
   const p = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") p.set(k, String(v));
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "" && v !== false) p.set(k, String(v));
   const s = p.toString();
   return s ? `?${s}` : "";
 }

@@ -1,9 +1,10 @@
-"""Tautulli API v2. Avspillingshistorikk hentes inkrementelt."""
+"""Tautulli API v2. Watch history is fetched incrementally."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
+from ..i18n import L
 from .base import ServiceError, get_json
 
 PAGE = 1000
@@ -11,12 +12,12 @@ PAGE = 1000
 
 def _call(cfg: dict, cmd: str, **params):
     if not cfg.get("url") or not cfg.get("api_key"):
-        raise ServiceError("URL eller API-nøkkel mangler")
+        raise ServiceError(L("URL or API key is missing", "URL eller API-nøkkel mangler"))
     data = get_json(f"{cfg['url'].rstrip('/')}/api/v2",
                     params={"apikey": cfg["api_key"], "cmd": cmd, **params})
     resp = data.get("response", {})
     if resp.get("result") != "success":
-        raise ServiceError(f"Tautulli {cmd}: {resp.get('message') or 'ukjent feil'}")
+        raise ServiceError(f"Tautulli {cmd}: {resp.get('message') or 'unknown error'}")
     return resp.get("data")
 
 
@@ -46,7 +47,7 @@ def fetch_history(cfg: dict, since_epoch: int | None,
                   progress: Callable[[float, str], None] | None = None) -> list[tuple]:
     params = {"length": PAGE, "order_column": "date", "order_dir": "asc", "grouping": 1}
     if since_epoch:
-        # Overlapp én dag; radene upsertes på row_id så duplikater er ufarlige.
+        # Overlap one day; rows are upserted on row_id so duplicates are harmless.
         d = datetime.fromtimestamp(since_epoch, tz=timezone.utc) - timedelta(days=1)
         params["after"] = d.strftime("%Y-%m-%d")
     out, start = [], 0

@@ -1,10 +1,10 @@
-"""Inkrementell filskanner (kun lesing).
+"""Incremental file scanner (read only).
 
-- Mapper med uendret mtime hopper over stat() av filene sine (filer lagt til/fjernet endrer
-  alltid mappens mtime). Undermapper besøkes alltid, men readdir er billig.
-- Full skanning (stat av alt) kjøres periodisk for å fange endringer i eksisterende filer.
-- Lav belastning: valgfri pause per 1000 oppføringer.
-- Delvis hash (start/midt/slutt) beregnes kun for filer som har samme størrelse som en annen fil.
+- Folders with an unchanged mtime skip stat() of their files (adding/removing files always changes
+  the folder's mtime). Subfolders are always visited, but readdir is cheap.
+- A full scan (stat of everything) runs periodically to catch changes to existing files.
+- Low load: an optional pause per 1000 entries.
+- A partial hash (start/middle/end) is only computed for files that have the same size as another file.
 """
 from __future__ import annotations
 
@@ -15,13 +15,14 @@ import time
 from typing import Callable
 
 from . import db, settings
+from .i18n import L, fmt
 
 VIDEO_EXT = {".mkv", ".mp4", ".m4v", ".avi", ".ts", ".m2ts", ".iso", ".wmv", ".mov", ".mpg", ".mpeg", ".vob", ".webm", ".img"}
 EXTRA_DIRS = {"featurettes", "extras", "behind the scenes", "deleted scenes", "interviews", "scenes",
               "shorts", "trailers", "other", "sample", "samples", "specials-extras"}
 EXTRA_RE = re.compile(r"(^|[.\-_ ])(sample|trailer)([.\-_ ]|$)", re.I)
 CHUNK = 4 * 1024 * 1024
-# Kun for tester med glisne (sparse) filer: bruk tilsynelatende størrelse som allokert størrelse.
+# Only for tests with sparse files: use the apparent size as the allocated size.
 APPARENT_ALLOC = os.environ.get("SMC_TEST_APPARENT_SIZE") == "1"
 
 Progress = Callable[[float, str], None]
@@ -87,12 +88,12 @@ def scan(progress: Progress, full: bool = False) -> dict:
                     seen += 1
                     if seen % 1000 == 0:
                         if throttle:
-                            # Slipp skrivelåsen mens vi venter, så andre skrivere ikke blokkeres
+                            # Release the write lock while waiting, so other writers are not blocked
                             c.execute("COMMIT")
                             time.sleep(throttle)
                             c.execute("BEGIN")
                             pending, last_commit = 0, time.time()
-                        progress(min(0.95, seen / prev_total * 0.9), f"Skanner {lib['name']}: {seen} oppføringer")
+                        progress(min(0.95, seen / prev_total * 0.9), fmt("Scanning {lib}: {n} entries", "Skanner {lib}: {n} oppføringer", lib=lib['name'], n=seen))
                     try:
                         if e.is_dir(follow_symlinks=False):
                             stack.append(e.path)
@@ -122,31 +123,31 @@ def scan(progress: Progress, full: bool = False) -> dict:
                           "ON CONFLICT(path) DO UPDATE SET mtime=excluded.mtime, scan_id=excluded.scan_id",
                           (host_dir, lib["name"], dst.st_mtime, scan_id))
                 pending += 1
-                # Korte transaksjoner, så API og planlegger slipper til underveis
+                # Short transactions, so the API and scheduler get their turn
                 if pending >= 5000 or time.time() - last_commit > 2.0:
                     c.execute("COMMIT")
                     c.execute("BEGIN")
                     pending = 0
                     last_commit = time.time()
-            # Fjern det som ikke lenger finnes i dette biblioteket
+            # Remove what no longer exists in this library
             c.execute("DELETE FROM files WHERE library=? AND (scan_id IS NULL OR scan_id<>?)", (lib["name"], scan_id))
             c.execute("DELETE FROM dirs WHERE library=? AND (scan_id IS NULL OR scan_id<>?)", (lib["name"], scan_id))
             c.execute("COMMIT")
 
     with db.conn() as c:
-        # Biblioteker som er fjernet fra konfigurasjonen
+        # Libraries that were removed from the configuration
         names = [l["name"] for l in libs if l["name"] not in missing]
         if names:
             ph = ",".join("?" * len(names))
             c.execute(f"DELETE FROM files WHERE library NOT IN ({ph})", names)
             c.execute(f"DELETE FROM dirs WHERE library NOT IN ({ph})", names)
 
-    progress(0.95, "Beregner delvis hash for mulige duplikater")
+    progress(0.95, L("Computing partial hashes for possible duplicates", "Beregner delvis hash for mulige duplikater"))
     hashed = hash_candidates(s["scanner"]["hash_min_size_mb"] * 1024 * 1024, libs)
 
     with db.conn() as c:
         n, b = c.execute("SELECT COUNT(*), COALESCE(SUM(size),0) FROM files").fetchone()
-        status = "ok" if not missing else "delvis: mangler " + ", ".join(missing)
+        status = "ok" if not missing else "partial: missing " + ", ".join(missing)
         c.execute("UPDATE scans SET finished=?, files=?, bytes=?, status=? WHERE id=?",
                   (time.time(), n, b, status, scan_id))
         db.kv_set(c, "last_scan", {"time": time.time(), "full": full, "files": n, "bytes": b,
@@ -154,12 +155,12 @@ def scan(progress: Progress, full: bool = False) -> dict:
                                    "duration": time.time() - started})
         if full:
             db.kv_set(c, "last_full_scan", time.time())
-    progress(1.0, f"Skanning ferdig: {n} filer")
+    progress(1.0, fmt("Scan finished: {n} files", "Skanning ferdig: {n} filer", n=n))
     return {"files": n, "bytes": b, "stat_calls": stats_done, "hashed": hashed, "missing": missing}
 
 
 def hash_candidates(min_size: int, libs: list[dict]) -> int:
-    """Delvis hash for filer med samme størrelse men ulik inode. Caches på (størrelse, mtime)."""
+    """Partial hash for files with the same size but different inodes. Cached on (size, mtime)."""
     to_container = {l["host_path"].rstrip("/"): l["container_path"].rstrip("/") for l in libs}
     count = 0
     with db.conn() as c:

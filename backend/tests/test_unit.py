@@ -8,11 +8,11 @@ from app.clients.base import ts
 
 
 def test_path_mapping_longest_prefix():
-    s = {"path_mappings": [{"from": "/FILM", "to": "/mnt/pool1/FILM"},
-                           {"from": "/FILM/4K", "to": "/mnt/pool1/FILM4K"}]}
-    assert settings.map_service_path("/FILM/A (2010)/a.mkv", s) == "/mnt/pool1/FILM/A (2010)/a.mkv"
-    assert settings.map_service_path("/FILM/4K/b.mkv", s) == "/mnt/pool1/FILM4K/b.mkv"
-    assert settings.map_service_path("/FILMER/c.mkv", s) == "/FILMER/c.mkv"  # ikke delvis navnetreff
+    s = {"path_mappings": [{"from": "/Movies", "to": "/mnt/tank/media/Movies"},
+                           {"from": "/Movies/4K", "to": "/mnt/tank/media/Movies4K"}]}
+    assert settings.map_service_path("/Movies/A (2010)/a.mkv", s) == "/mnt/tank/media/Movies/A (2010)/a.mkv"
+    assert settings.map_service_path("/Movies/4K/b.mkv", s) == "/mnt/tank/media/Movies4K/b.mkv"
+    assert settings.map_service_path("/MoviesER/c.mkv", s) == "/MoviesER/c.mkv"  # not a partial name match
     assert settings.map_service_path(None, s) is None
 
 
@@ -56,30 +56,30 @@ def _fi(dev, ino, nlink):
 
 def test_freed_bytes_counts_inode_once():
     info = {"/a": _fi(1, 10, 1)}
-    # Samme fil i to forslag (serie + sesong) -> maks krav, ikke summen
+    # The same file in two suggestions (series + season) -> the largest claim, not the sum
     assert freed_bytes({"/a": 5 * GB}, info, {(1, 10): ["/a"]}) == (5 * GB, 0)
 
 
 def test_freed_bytes_hardlinks():
     info = {"/lib/a": _fi(1, 10, 2), "/dl/a": _fi(1, 10, 2)}
     paths = {(1, 10): ["/lib/a", "/dl/a"]}
-    # Bare den ene stien valgt -> ingenting frigjøres
+    # Only one of the paths selected -> nothing is freed
     assert freed_bytes({"/lib/a": GB}, info, paths) == (0, GB)
-    # Begge stier valgt -> frigjøres én gang
+    # Both paths selected -> freed once
     assert freed_bytes({"/lib/a": GB, "/dl/a": GB}, info, paths) == (GB, 0)
-    # Ukjent hardlink utenfor skannede mapper (nlink 3, bare 2 kjente) -> holdes
+    # Unknown hardlink outside the scanned folders (nlink 3, only 2 known) -> held
     info3 = {k: _fi(1, 10, 3) for k in info}
     assert freed_bytes({"/lib/a": GB, "/dl/a": GB}, info3, paths) == (0, GB)
 
 
 def test_scanner_incremental_and_removal(tmp_path, monkeypatch):
-    root = tmp_path / "FILM"
+    root = tmp_path / "Movies"
     (root / "A (2010)").mkdir(parents=True)
     (root / "A (2010)" / "a.mkv").write_bytes(b"x" * 1000)
     (root / "B (2011)").mkdir()
     (root / "B (2011)" / "b.mkv").write_bytes(b"y" * 2000)
     s = settings.get()
-    s["libraries"] = [{"name": "FILM", "host_path": "/mnt/pool1/FILM", "container_path": str(root), "kind": "movies"}]
+    s["libraries"] = [{"name": "Movies", "host_path": "/mnt/tank/media/Movies", "container_path": str(root), "kind": "movies"}]
     s["scanner"]["throttle_ms_per_1000"] = 0
     monkeypatch.setattr(settings, "get", lambda: s)
     db.init()
@@ -98,10 +98,39 @@ def test_scanner_incremental_and_removal(tmp_path, monkeypatch):
     assert r3["files"] == 2
     with db.conn() as c:
         paths = {r[0] for r in c.execute("SELECT path FROM files")}
-    assert paths == {"/mnt/pool1/FILM/A (2010)/a.mkv", "/mnt/pool1/FILM/A (2010)/a.srt"}
+    assert paths == {"/mnt/tank/media/Movies/A (2010)/a.mkv", "/mnt/tank/media/Movies/A (2010)/a.srt"}
     # Full skanning stat'er alt
     r4 = scanner.scan(noop, full=True)
     assert r4["stat_calls"] == 2
     with db.conn() as c:
         c.execute("DELETE FROM files")
         c.execute("DELETE FROM dirs")
+
+
+def test_guess_library_kind():
+    from app.settings import guess_kind
+    assert [guess_kind(n) for n in ("Movies", "FILM", "TV", "Series", "Downloads", "tmp", "Kids", "Anime")] == \
+        ["movies", "movies", "series", "series", "downloads", "downloads", "mixed", "series"]
+
+
+def test_detect_libraries_from_mounts(tmp_path, monkeypatch):
+    from app import settings
+    for n in ("Movies", "TV", "downloads", ".hidden"):
+        (tmp_path / n).mkdir()
+    monkeypatch.setattr(settings, "MEDIA_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "_mounts", lambda: {str(tmp_path / "Movies"): ("/media/Movies", "zfs", "tank")})
+    libs = {l["name"]: l for l in settings.detect_libraries()}
+    assert set(libs) == {"Movies", "TV", "downloads"}
+    assert libs["Movies"]["host_path"] == "/mnt/tank/media/Movies" and libs["Movies"]["kind"] == "movies"
+    assert libs["TV"]["host_path"] == str(tmp_path / "TV")          # not a zfs bind mount: container path
+    assert libs["downloads"]["kind"] == "downloads"
+
+
+def test_i18n_helpers():
+    from app.i18n import L, fmt, gb, localize, parse_lang, store, text
+    m = fmt("{s} can be freed", "{s} kan frigjøres", s=gb(1.5 * 1024 ** 3))
+    assert m == {"en": "1.5 GB can be freed", "nb": "1,5 GB kan frigjøres"}
+    stored = store(L("Hello", "Hei"))
+    assert text(stored, "nb") == "Hei" and localize({"a": [stored]}, "en") == {"a": ["Hello"]}
+    assert fmt("Protected: {r}", "Beskyttet: {r}", r=stored)["en"] == "Protected: Hello"
+    assert parse_lang("nn-NO,en;q=0.5") == "nb" and parse_lang("de-DE") == "en" and parse_lang(None) == "en"

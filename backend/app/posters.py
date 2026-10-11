@@ -1,8 +1,8 @@
-"""Plakater for filmer og serier.
+"""Posters for movies and series.
 
-Hentes fra Plex (samme bilde som i Plex), med Radarr/Sonarr som reserve. Nettleseren
-snakker bare med denne appen, så Plex-token og API-nøkler forlater aldri serveren.
-Bildene lagres i /data/posters og hentes på nytt etter 30 dager.
+Fetched from Plex (the same picture as in Plex), with Radarr/Sonarr as a fallback. The browser only
+talks to this app, so the Plex token and API keys never leave the server.
+The pictures are stored in /data/posters and fetched again after 30 days.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from . import db, settings
 log = logging.getLogger("smc.posters")
 WIDTH, HEIGHT = 300, 450
 MAX_AGE = 30 * 86400
-MISS_AGE = 86400          # prøv igjen etter et døgn hvis ingen kilde hadde bilde
+MISS_AGE = 86400          # try again after a day if no source had a picture
 _locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
 
@@ -103,7 +103,7 @@ def get(key: str) -> Path | None:
             miss.unlink(missing_ok=True)
             return path
         miss.touch()
-        return path if path.exists() else None  # behold et gammelt bilde hvis kilden er nede
+        return path if path.exists() else None  # keep an old picture if the source is down
 
 
 def media_type(path: Path) -> str:

@@ -1,9 +1,9 @@
-"""Finn mindre versjoner via Radarr/Sonarr sin interaktive søk mot indekserne (kun lesing).
+"""Find smaller versions through the interactive search of Radarr/Sonarr against the indexers (read only).
 
 Radarr:  GET /api/v3/release?movieId=…
-Sonarr:  GET /api/v3/release?seriesId=…&seasonNumber=… (sesongpakker)
-Resultatene filtreres (må være merkbart mindre enn det som ligger på disk), rangeres med en
-forklarbar poengsum og caches i 30 minutter for å skåne indekserne.
+Sonarr:  GET /api/v3/release?seriesId=…&seasonNumber=… (season packs)
+Results are filtered (must be noticeably smaller than what is on disk), ranked with an explainable
+score and cached for 30 minutes to spare the indexers.
 """
 from __future__ import annotations
 
@@ -12,17 +12,20 @@ import re
 import time
 
 from . import db, settings
-from .actions import ActionError, _arr, _req
+from .actions import _arr, _req
+from .i18n import L, ActionError, fmt
+
+NO_SEEDERS = L("No seeders", "Ingen delere")
 
 GB = 1024 ** 3
 CACHE_SECONDS = 30 * 60
-# Avvisninger som bare betyr «dette er ikke en oppgradering» – forventet når vi leter etter mindre filer
+# Rejections that only mean «this is not an upgrade» – expected when looking for smaller files
 EXPECTED_REJECTION = re.compile(r"upgrade|preference|cutoff|already meets|existing file|not wanted in .*profile", re.I)
 PROFILE_REJECTION = re.compile(r"not wanted in .*profile", re.I)
 
 
 def _current(c, t: dict, season: int | None) -> tuple[int, int]:
-    """(nåværende størrelse på videofilene, antall episoder) for tittelen/sesongen."""
+    """(current size of the video files, number of episodes) for the title/season."""
     sql = """SELECT f.alloc, f.size, ft.season, ft.episode FROM file_title ft JOIN files f ON f.path=ft.path
              WHERE ft.title_key=? AND f.is_video=1 AND f.is_extra=0"""
     rows = db.rows(c, sql, (t["key"],))
@@ -33,62 +36,67 @@ def _current(c, t: dict, season: int | None) -> tuple[int, int]:
     return sum(r["alloc"] or r["size"] for r in rows), len({r["episode"] for r in rows if r["episode"] is not None}) or len(rows)
 
 
-def _score(r: dict, current: int, target: int) -> tuple[float, list[str], list[str]]:
+def _score(r: dict, current: int, target: int) -> tuple[float, list, list]:
     reasons, warnings = [], []
     size = r["size"]
     ratio = 1 - size / current
     pts = 40 * ratio
-    reasons.append(f"{ratio * 100:.0f} % mindre enn i dag")
+    reasons.append(fmt("{p:.0f} % smaller than today", "{p:.0f} % mindre enn i dag", p=ratio * 100))
     res = r["resolution"] or 0
     if res == 1080:
         pts += 20
         reasons.append("1080p")
     elif res >= 2160:
         pts += 15
-        reasons.append("Beholder 4K")
+        reasons.append(L("Keeps 4K", "Beholder 4K"))
     elif res == 720:
         pts += 5
-        warnings.append("Bare 720p")
+        warnings.append(L("Only 720p", "Bare 720p"))
     elif res:
-        warnings.append(f"Lav oppløsning ({res}p)")
+        warnings.append(fmt("Low resolution ({r}p)", "Lav oppløsning ({r}p)", r=res))
     if target and 0.5 * target <= size <= 1.6 * target:
         pts += 10
-        reasons.append("Nær målstørrelsen")
+        reasons.append(L("Close to the target size", "Nær målstørrelsen"))
     if r["protocol"] == "torrent":
         s = r["seeders"] or 0
         if s >= 20:
             pts += 15
-            reasons.append(f"{s} delere")
+            reasons.append(fmt("{s} seeders", "{s} delere", s=s))
         elif s >= 5:
             pts += 10
-            reasons.append(f"{s} delere")
+            reasons.append(fmt("{s} seeders", "{s} delere", s=s))
         elif s >= 1:
             pts += 3
-            warnings.append(f"Bare {s} deler(e)")
+            warnings.append(fmt("Only {s} seeder(s)", "Bare {s} deler(e)", s=s))
         else:
             pts -= 30
-            warnings.append("Ingen delere")
+            warnings.append(NO_SEEDERS)
     elif r["protocol"] == "usenet":
         pts += 10
         reasons.append("Usenet")
     cf = r["custom_format_score"] or 0
     if cf > 0:
         pts += 5
-        reasons.append(f"Egendefinert format +{cf}")
+        reasons.append(fmt("Custom format +{cf}", "Egendefinert format +{cf}", cf=cf))
     elif cf < 0:
         pts -= 10
-        warnings.append(f"Egendefinert format {cf}")
+        warnings.append(fmt("Custom format {cf}", "Egendefinert format {cf}", cf=cf))
     for rej in r["rejections"]:
         if PROFILE_REJECTION.search(rej):
             pts -= 5
-            warnings.append("Kvaliteten er ikke med i kvalitetsprofilen – profilen må endres")
+            warnings.append(L("The quality is not in the quality profile – the profile must be changed",
+                              "Kvaliteten er ikke med i kvalitetsprofilen – profilen må endres"))
         elif not EXPECTED_REJECTION.search(rej):
             pts -= 15
             warnings.append(rej)
     if (r["age_days"] or 0) > 3000:
         pts -= 5
-        warnings.append("Svært gammel utgivelse")
-    return round(max(0.0, min(100.0, pts)), 1), reasons, list(dict.fromkeys(warnings))
+        warnings.append(L("Very old release", "Svært gammel utgivelse"))
+    uniq = []
+    for w in warnings:
+        if w not in uniq:
+            uniq.append(w)
+    return round(max(0.0, min(100.0, pts)), 1), reasons, uniq
 
 
 def _parse(raw: dict) -> dict:
@@ -108,7 +116,7 @@ def search(key: str, season: int | None = None, refresh: bool = False) -> dict:
     with db.conn() as c:
         rows = db.rows(c, "SELECT * FROM titles WHERE key=?", (key,))
         if not rows:
-            raise ActionError("Fant ikke tittelen")
+            raise ActionError(L("Title not found", "Fant ikke tittelen"))
         t = rows[0]
         cache_key = f"releases:{key}:{season}"
         cached = db.kv_get(c, cache_key)
@@ -122,12 +130,13 @@ def search(key: str, season: int | None = None, refresh: bool = False) -> dict:
         service, target = "radarr", int(a["target_movie_gb"] * GB)
     elif t["sonarr_id"] is not None:
         if season is None:
-            raise ActionError("Velg en sesong å søke etter")
+            raise ActionError(L("Choose a season to search for", "Velg en sesong å søke etter"))
         base, h = _arr("sonarr")
         raw = _req("GET", f"{base}/api/v3/release", h, params={"seriesId": t["sonarr_id"], "seasonNumber": season}).json()
         service, target = "sonarr", int(a["target_episode_gb"] * GB * max(1, episodes))
     else:
-        raise ActionError("Tittelen administreres ikke av Radarr/Sonarr, så indekserne kan ikke søkes herfra")
+        raise ActionError(L("The title is not managed by Radarr/Sonarr, so the indexers cannot be searched from here",
+                            "Tittelen administreres ikke av Radarr/Sonarr, så indekserne kan ikke søkes herfra"))
 
     releases = [_parse(r) for r in raw]
     if service == "sonarr":
@@ -143,7 +152,7 @@ def search(key: str, season: int | None = None, refresh: bool = False) -> dict:
     smaller.sort(key=lambda r: (-r["score"], r["size"]))
     rec = 0
     for r in smaller:
-        r["recommended"] = rec < 3 and r["score"] >= 45 and not any("Ingen delere" in w for w in r["warnings"])
+        r["recommended"] = rec < 3 and r["score"] >= 45 and NO_SEEDERS not in r["warnings"]
         rec += r["recommended"]
     result = {"key": key, "title": t["name"], "year": t["year"], "service": service, "season": season,
               "current_size": current, "episodes": episodes, "target": target, "total": total,

@@ -1,12 +1,13 @@
-"""Seerr/Overseerr (valgfritt): hvem ba om hva, og når."""
+"""Seerr/Overseerr (optional): who requested what, and when."""
 from __future__ import annotations
 
+from ..i18n import L
 from .base import ServiceError, get_json, ts
 
 
 def _cfg(cfg: dict):
     if not cfg.get("url") or not cfg.get("api_key"):
-        raise ServiceError("URL eller API-nøkkel mangler")
+        raise ServiceError(L("URL or API key is missing", "URL eller API-nøkkel mangler"))
     return cfg["url"].rstrip("/"), {"X-Api-Key": cfg["api_key"]}
 
 

@@ -1,6 +1,7 @@
-"""Innstillinger: standardverdier <- /data/settings.json <- miljøvariabler.
+"""Settings: defaults <- /data/settings.json <- environment variables.
 
-Miljøvariabler har høyest prioritet og låses i UI. Hemmeligheter maskeres i API-svar.
+Environment variables win and are locked in the UI. Secrets are masked in API responses.
+Libraries are detected from the folders mounted under /media on first start (see detect_libraries).
 """
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 DATA_DIR = Path(os.environ.get("SMC_DATA_DIR", "/data"))
+MEDIA_ROOT = Path(os.environ.get("SMC_MEDIA_ROOT", "/media"))
 SETTINGS_FILE = DATA_DIR / "settings.json"
 MASK = "********"
 SECRET_KEYS = {"api_key", "token"}
@@ -23,23 +25,14 @@ DEFAULTS: dict[str, Any] = {
         "plex": {"enabled": True, "url": "", "token": ""},
         "tautulli": {"enabled": True, "url": "", "api_key": ""},
         "seerr": {"enabled": False, "url": "", "api_key": ""},
-        "truenas": {"enabled": False, "url": "", "api_key": "", "verify_tls": False, "dataset": "pool1"},
+        "truenas": {"enabled": False, "url": "", "api_key": "", "verify_tls": False, "dataset": ""},
     },
-    # Biblioteker som skannes. host_path = sti på TrueNAS, container_path = mount i containeren.
-    "libraries": [
-        {"name": "FILM", "host_path": "/mnt/pool1/FILM", "container_path": "/media/FILM", "kind": "movies", "protected": False},
-        {"name": "TV", "host_path": "/mnt/pool1/TV", "container_path": "/media/TV", "kind": "series", "protected": False},
-        {"name": "Barn", "host_path": "/mnt/pool1/Barn", "container_path": "/media/Barn", "kind": "mixed", "protected": True},
-        {"name": "tmp", "host_path": "/mnt/pool1/tmp", "container_path": "/media/tmp", "kind": "downloads", "protected": False},
-    ],
-    # Hvordan tjenestene ser stiene -> vertssti. Lengste prefiks vinner.
-    "path_mappings": [
-        {"from": "/FILM", "to": "/mnt/pool1/FILM"},
-        {"from": "/TV", "to": "/mnt/pool1/TV"},
-        {"from": "/Barn", "to": "/mnt/pool1/Barn"},
-        {"from": "/tmp-download", "to": "/mnt/pool1/tmp"},
-        {"from": "/downloads", "to": "/mnt/pool1/tmp"},
-    ],
+    # Libraries that are scanned. host_path = path on the NAS, container_path = mount in this container.
+    # kind: movies | series | mixed | downloads. Empty by default – detected from /media on first start.
+    "libraries": [],
+    # How the services (Radarr, Sonarr, Plex, download client) see the paths -> host path.
+    # The longest prefix wins. Empty by default; the Settings page suggests mappings.
+    "path_mappings": [],
     "analysis": {
         "stale_months": [12, 24, 36],
         "quarantine_months": 6,
@@ -62,11 +55,11 @@ DEFAULTS: dict[str, Any] = {
         "request": 1.0,
     },
     "protection": {
-        "tags": ["keep", "behold"],
-        "plex_labels": ["keep", "behold"],
+        "tags": ["keep"],
+        "plex_labels": ["keep"],
         "paths": [],
-        # Skal beskyttelse også hindre opprydding i duplikater? Av som standard: én fil blir
-        # alltid igjen, så innholdet beholdes uansett.
+        # Should protection also prevent cleaning up duplicates? Off by default: one file always
+        # remains, so the content is kept anyway.
         "include_duplicates": False,
     },
     "scanner": {
@@ -114,7 +107,7 @@ def _read_file() -> dict:
     except FileNotFoundError:
         return {}
     except Exception:
-        # Ødelagt fil skal ikke stoppe appen; standardverdier brukes.
+        # A broken file must not stop the app; the defaults are used.
         return {}
 
 
@@ -132,7 +125,7 @@ def get() -> dict:
             for p in path[:-1]:
                 node = node.setdefault(p, {})
             node[path[-1]] = val
-            # En URL satt via env betyr at tjenesten er ment å være på.
+            # A URL set through env means the service is meant to be on.
             if path[-1] == "url":
                 node["enabled"] = True
     return s
@@ -149,7 +142,7 @@ def masked(s: dict | None = None) -> dict:
 
 
 def save(new: dict) -> dict:
-    """Lagrer innstillinger fra UI. Maskerte hemmeligheter beholder gammel verdi."""
+    """Saves settings from the UI. Masked secrets keep their old value."""
     new = copy.deepcopy(new)
     new.pop("_env_locked", None)
     with _lock:
@@ -159,7 +152,7 @@ def save(new: dict) -> dict:
                 if svc.get(k) == MASK:
                     svc[k] = current["services"].get(name, {}).get(k, "")
         merged = _deep_merge(current, new)
-        # Lister erstattes helt (ikke flettes)
+        # Lists are replaced entirely (not merged)
         for key in ("libraries", "path_mappings"):
             if key in new:
                 merged[key] = new[key]
@@ -172,7 +165,7 @@ def save(new: dict) -> dict:
 
 
 def map_service_path(path: str | None, s: dict | None = None) -> str | None:
-    """Oversetter en sti slik tjenesten ser den til vertssti."""
+    """Translates a path as the service sees it to the host path."""
     if not path:
         return path
     s = s or get()
@@ -186,3 +179,72 @@ def map_service_path(path: str | None, s: dict | None = None) -> str | None:
         return path
     src = best["from"].rstrip("/")
     return best["to"].rstrip("/") + path[len(src):]
+
+
+# ---------------------------------------------------------------- library detection
+
+KIND_HINTS = (
+    ("downloads", ("download", "torrent", "usenet", "nzb", "incomplete", "complete", "tmp", "temp")),
+    ("series", ("tv", "series", "serier", "shows", "show", "anime")),
+    ("movies", ("movie", "movies", "film", "filmer", "cinema")),
+)
+
+
+def guess_kind(name: str) -> str:
+    n = name.lower()
+    for kind, words in KIND_HINTS:
+        if any(n == w or n.startswith(w) or w in n.split() for w in words):
+            return kind
+    return "mixed"
+
+
+def _mounts() -> dict[str, tuple[str, str, str]]:
+    """mount point -> (root inside the source, fstype, source) from /proc/self/mountinfo."""
+    out = {}
+    try:
+        for line in Path("/proc/self/mountinfo").read_text().splitlines():
+            left, _, right = line.partition(" - ")
+            f, r = left.split(), right.split()
+            if len(f) >= 5 and len(r) >= 2:
+                unesc = lambda x: x.replace("\\040", " ").replace("\\011", "\t").replace("\\134", "\\")  # noqa: E731
+                out[unesc(f[4])] = (unesc(f[3]), r[0], unesc(r[1]))
+    except OSError:
+        pass
+    return out
+
+
+def host_path_for(container_path: str) -> str:
+    """Best guess of the NAS path behind a bind mount. On TrueNAS a dataset «pool/a» is mounted at
+    /mnt/pool/a, so a bind of /mnt/pool/a/Movies shows up as source «pool/a» with root «/Movies»."""
+    info = _mounts().get(container_path.rstrip("/"))
+    if info:
+        root, fstype, source = info
+        if fstype == "zfs" and source and not source.startswith("/"):
+            return "/mnt/" + source.strip("/") + ("" if root in ("", "/") else root)
+    return container_path.rstrip("/")
+
+
+def detect_libraries() -> list[dict]:
+    """One library per folder mounted directly under /media."""
+    libs = []
+    try:
+        entries = sorted(p for p in MEDIA_ROOT.iterdir() if p.is_dir())
+    except OSError:
+        return libs
+    for p in entries:
+        if p.name.startswith("."):
+            continue
+        libs.append({"name": p.name, "host_path": host_path_for(str(p)), "container_path": str(p),
+                     "kind": guess_kind(p.name), "protected": False, "detected": True})
+    return libs
+
+
+def ensure_libraries() -> list[dict]:
+    """On first start (no libraries configured): detect them from the mounts and save."""
+    current = _read_file()
+    if current.get("libraries"):
+        return current["libraries"]
+    found = detect_libraries()
+    if found:
+        save({**current, "libraries": found})
+    return found

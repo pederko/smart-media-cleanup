@@ -1,6 +1,6 @@
-"""Minimale etterligninger av Radarr/Sonarr/Plex/Tautulli for ende-til-ende-test.
+"""Minimal imitations of Radarr/Sonarr/Plex/Tautulli/Seerr for the end-to-end test.
 
-Feltene speiler de virkelige API-svarene som appen leser (ingen ekstra felter brukes).
+The fields mirror the real API responses the app reads (no extra fields are used).
 """
 from __future__ import annotations
 
@@ -17,15 +17,15 @@ def iso(ts: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S.1234567Z", time.gmtime(ts))
 
 
-# (radarr_id, tittel, år, mappe, filnavn (styrt av Radarr), monitored, lagt til, oppløsning, plex rk)
+# (radarr_id, title, year, folder, file name (managed by Radarr), monitored, added, resolution, plex rk)
 MOVIES = [
-    (1, "Big Movie", 2010, "/FILM/Big Movie (2010)", "Big.Movie.2010.2160p.REMUX.mkv", False, NOW - 2000 * DAY, 2160, "101"),
-    (2, "Popular", 2015, "/FILM/Popular (2015)", "Popular.2015.1080p.mkv", True, NOW - 1500 * DAY, 1080, "102"),
-    (3, "Twin", 2012, "/FILM/Twin (2012)", "Twin.2012.1080p.mkv", True, NOW - 1500 * DAY, 1080, "103"),
-    (4, "New", 2026, "/FILM/New (2026)", "New.2026.1080p.mkv", True, NOW - 30 * DAY, 1080, "104"),
-    (5, "Hardlinked", 2011, "/FILM/Hardlinked (2011)", "Hardlinked.2011.mkv", False, NOW - 1500 * DAY, 1080, "105"),
-    (6, "Copy", 2013, "/FILM/Copy (2013)", "Copy.2013.mkv", False, NOW - 1500 * DAY, 1080, "106"),
-    (7, "Keeper", 2009, "/FILM/Keeper (2009)", "Keeper.2009.mkv", False, NOW - 1500 * DAY, 1080, "107"),
+    (1, "Big Movie", 2010, "/Movies/Big Movie (2010)", "Big.Movie.2010.2160p.REMUX.mkv", False, NOW - 2000 * DAY, 2160, "101"),
+    (2, "Popular", 2015, "/Movies/Popular (2015)", "Popular.2015.1080p.mkv", True, NOW - 1500 * DAY, 1080, "102"),
+    (3, "Twin", 2012, "/Movies/Twin (2012)", "Twin.2012.1080p.mkv", True, NOW - 1500 * DAY, 1080, "103"),
+    (4, "New", 2026, "/Movies/New (2026)", "New.2026.1080p.mkv", True, NOW - 30 * DAY, 1080, "104"),
+    (5, "Hardlinked", 2011, "/Movies/Hardlinked (2011)", "Hardlinked.2011.mkv", False, NOW - 1500 * DAY, 1080, "105"),
+    (6, "Copy", 2013, "/Movies/Copy (2013)", "Copy.2013.mkv", False, NOW - 1500 * DAY, 1080, "106"),
+    (7, "Keeper", 2009, "/Movies/Keeper (2009)", "Keeper.2009.mkv", False, NOW - 1500 * DAY, 1080, "107"),
 ]
 SIZES = {1: 80 * GB, 2: 10 * GB + 1, 3: 15 * GB + 2, 4: 30 * GB + 3, 5: 20 * GB + 4, 6: 7 * GB + 5, 7: 9 * GB + 6}
 SERIES = [
@@ -40,8 +40,8 @@ EPISODES = [  # (id, series, season, ep, filename, size)
     (21, 2, 1, 1, "Season 01/Hot.Show.S01E01.mkv", 9 * GB + 21),
     (22, 2, 1, 2, "Season 01/Hot.Show.S01E02.mkv", 9 * GB + 22),
 ]
-KIDS = ("/Barn/Kids Movie (2018)/Kids.Movie.2018.mkv", 5 * GB + 31, "301")
-EXTRA_TWIN = ("/FILM/Twin (2012)/Twin.2012.2160p.mkv", 60 * GB + 7)
+KIDS = ("/Kids/Kids Movie (2018)/Kids.Movie.2018.mkv", 5 * GB + 31, "301")
+EXTRA_TWIN = ("/Movies/Twin (2012)/Twin.2012.2160p.mkv", 60 * GB + 7)
 
 PLAYS = [  # (row_id, dager siden, bruker, media_type, rating_key, grandparent, season)
     (1, 10, "anna", "movie", "102", "", None),
@@ -51,17 +51,17 @@ PLAYS = [  # (row_id, dager siden, bruker, media_type, rating_key, grandparent, 
     (5, 1100, "anna", "episode", "2012", "201", 1),
     (6, 5, "bjorn", "episode", "2021", "202", 1),
     (7, 500, "anna", "movie", "103", "", None),
-    (8, 3, "anna", "movie", "999", "", None),  # rating key som ikke finnes lenger -> navnematch
+    (8, 3, "anna", "movie", "999", "", None),  # rating key that no longer exists -> name match
 ]
 PLAY_TITLES = {"999": ("Keeper", 2009)}
 
-# Seerr-forespørsler: (id, type, tmdb, tvdb, visningsnavn, plex-brukernavn, dager siden, plex ratingKey)
+# Seerr requests: (id, type, tmdb, tvdb, display name, plex username, days ago, plex ratingKey)
 REQUESTS = [
     (1, "movie", 1001, None, "Bjørn B.", "bjorn", 1200, "101"),   # Big Movie – aldri sett av noen
     (2, "movie", 1002, None, "Anna", "anna", 600, "102"),          # Popular – Anna har sett den
     (3, "movie", 1003, None, "Cecilie", "cecilie", 60, "103"),     # Twin – nylig etterspurt
-    (4, "movie", None, None, "Anna", "anna", 800, "301"),          # Kids Movie – bare via Plex ratingKey
-    (5, "tv", None, 2001, "Bjørn B.", "bjorn", 1500, "201"),       # Old Show – Bjørn har ikke sett den
+    (4, "movie", None, None, "Anna", "anna", 800, "301"),          # Kids Movie – only through the Plex ratingKey
+    (5, "tv", None, 2001, "Bjørn B.", "bjorn", 1500, "201"),       # Old Show – Bjørn has not watched it
 ]
 
 KEY = "testkey"
@@ -137,9 +137,9 @@ def p_identity(x_plex_token: str = Header(None)):
 def p_sections(x_plex_token: str = Header(None)):
     _plex_auth(x_plex_token)
     return {"MediaContainer": {"Directory": [
-        {"key": "1", "title": "Filmer", "type": "movie", "Location": [{"path": "/FILM"}]},
+        {"key": "1", "title": "Filmer", "type": "movie", "Location": [{"path": "/Movies"}]},
         {"key": "2", "title": "Serier", "type": "show", "Location": [{"path": "/TV"}]},
-        {"key": "3", "title": "Barn", "type": "movie", "Location": [{"path": "/Barn"}]},
+        {"key": "3", "title": "Kids", "type": "movie", "Location": [{"path": "/Kids"}]},
     ]}}
 
 
@@ -188,9 +188,9 @@ def p_all(key: str, request: Request, x_plex_token: str = Header(None)):
             thumb = None if title == "Keeper" else f"/library/metadata/{rk}/thumb/1700000000"
             items.append({"ratingKey": rk, "title": title, "year": year, "addedAt": int(added), "Media": media,
                           "thumb": thumb})
-        # Plex peker på en fil som ikke finnes på disk lenger
+        # Plex points to a file that no longer exists on disk
         items.append({"ratingKey": "199", "title": "Gone", "year": 1999, "addedAt": int(NOW - 3000 * DAY),
-                      "Media": _media("/FILM/Gone (1999)/Gone.1999.mkv", 4 * GB, "1080")})
+                      "Media": _media("/Movies/Gone (1999)/Gone.1999.mkv", 4 * GB, "1080")})
     elif key == "3" and typ == 1:
         items.append({"ratingKey": KIDS[2], "title": "Kids Movie", "year": 2018, "addedAt": int(NOW - 900 * DAY),
                       "Media": _media(KIDS[0], KIDS[1], "1080")})
@@ -226,7 +226,7 @@ def seerr_requests(take: int = 20, skip: int = 0, x_api_key: str = Header(None))
     return {"pageInfo": {"pages": 1, "results": len(rows)}, "results": rows[skip:skip + take]}
 
 
-# Minste gyldige JPEG (1x1) + litt fyll så den passerer størrelsessjekken
+# Smallest valid JPEG (1x1) + some padding so it passes the size check
 JPEG = bytes.fromhex("ffd8ffe000104a46494600010100000100010000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffc0000b080001000101011100ffc4001f0000010501010101010100000000000000000102030405060708090a0bffc400b5100002010303020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8f9faffda0008010100003f00fbd3ffd9") + b"\x00" * 200
 POSTER_HITS = {"plex": 0, "radarr": 0}
 
@@ -272,9 +272,9 @@ async def r_movie_put(mid: int, request: Request, x_api_key: str = Header(None))
     return body
 
 
-# ---- bytte: grab, kø, manuell import, kvalitetsprofiler
-QUEUE: list = []          # elementer som returneres fra queue/details
-MANUAL: list = []         # import-forslag fra manualimport
+# ---- swap: grab, queue, manual import, quality profiles
+QUEUE: list = []          # items returned from queue/details
+MANUAL: list = []         # import proposals from manualimport
 
 
 @app.post("/radarr/api/v3/release")
@@ -366,7 +366,7 @@ def r_release(movieId: int, x_api_key: str = Header(None)):
     RELEASE_CALLS.append(movieId)
     up = ["Existing file on disk is of equal or higher preference: Remux-2160p"]
     return [
-        _rel("Big.Movie.2010.2160p.REMUX", 82, 2160, 50),                      # større – filtreres bort
+        _rel("Big.Movie.2010.2160p.REMUX", 82, 2160, 50),                      # larger – filtered out
         _rel("Big.Movie.2010.1080p.BluRay.x264", 14, 1080, 40, rejections=up),  # anbefalt
         _rel("Big.Movie.2010.1080p.WEB.x265", 6, 1080, 0, rejections=up),       # ingen delere
         _rel("Big.Movie.2010.2160p.WEB.HEVC", 25, 2160, 12, rejections=up),

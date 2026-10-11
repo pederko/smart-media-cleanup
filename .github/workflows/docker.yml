@@ -1,8 +1,8 @@
-name: Test og publiser image
+name: Test and publish image
 
-# Utgivelser styres av filen VERSION:
-#   * push til main          -> tester, image :edge og :sha-xxxxxxx
-#   * ny verdi i VERSION     -> i tillegg :<versjon>, :<major.minor>, :latest, git-tagg v<versjon> og GitHub-release
+# Releases are driven by the VERSION file:
+#   * push to main           -> tests, image :edge and :sha-xxxxxxx
+#   * new value in VERSION   -> also :<version>, :<major.minor>, :latest, git tag v<version> and a GitHub release
 on:
   push:
     branches: [main]
@@ -10,8 +10,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # for å lage tagg og release
-  packages: write   # for å publisere til ghcr.io
+  contents: write   # to create the tag and release
+  packages: write   # to publish to ghcr.io
 
 jobs:
   test:
@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Backend-tester
+      - name: Backend tests
         working-directory: backend
         run: |
           pip install -r requirements-dev.txt
@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Typesjekk og bygg frontend
+      - name: Type check and build the web UI
         working-directory: frontend
         run: |
           npm install --no-audit --no-fund
@@ -46,7 +46,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Les versjon
+      - name: Read the version
         id: ver
         run: |
           v="$(tr -d '[:space:]' < VERSION)"
@@ -88,7 +88,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Lag tagg og release
+      - name: Create tag and release
         if: steps.ver.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -96,6 +96,6 @@ jobs:
         run: |
           notes="$(awk -v v="## $V" '$0==v{f=1;next} /^## /{f=0} f' CHANGELOG.md)"
           gh release create "v$V" --target "$GITHUB_SHA" --title "v$V" \
-            --notes "${notes:-Se CHANGELOG.md}
+            --notes "${notes:-See CHANGELOG.md}
 
           Image: \`ghcr.io/${{ steps.ver.outputs.owner }}/smart-media-cleanup:$V\`"

@@ -1,4 +1,4 @@
-"""Henter data fra tjenestene og lagrer i SQLite. Hver tjeneste feiler uavhengig."""
+"""Fetches data from the services and stores it in SQLite. Each service fails independently."""
 from __future__ import annotations
 
 import json
@@ -8,6 +8,7 @@ from typing import Callable
 from . import db, settings
 from .clients import arr, plex, seerr, tautulli, truenas
 from .clients.base import ServiceError
+from .i18n import L, fmt, text
 
 Progress = Callable[[float, str], None]
 
@@ -24,12 +25,12 @@ def test_service(name: str, cfg: dict | None = None) -> dict:
         info = STATUS_FUNCS[name](cfg)
         return {"ok": True, **info}
     except ServiceError as e:
-        return {"ok": False, "error": str(e)}
-    except Exception as e:  # uventet – rapporter, ikke krasj
+        return {"ok": False, "error": e.msg}
+    except Exception as e:  # unexpected – report, do not crash
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
-def _set_status(c, name: str, ok: bool, message: str, count: int | None = None, configured: bool = True):
+def _set_status(c, name: str, ok: bool, message, count: int | None = None, configured: bool = True):
     st = db.kv_get(c, "service_status", {}) or {}
     prev = st.get(name, {})
     st[name] = {"ok": ok, "configured": configured, "message": message, "checked": time.time(),
@@ -61,34 +62,50 @@ def run(progress: Progress) -> dict:
 
     def step(name: str, frac: float, fn: Callable[[Progress], tuple[int, str]]):
         if not svc[name].get("enabled") or not svc[name].get("url"):
-            result[name] = "ikke konfigurert"
+            result[name] = "not configured"
             with db.conn() as c:
-                _set_status(c, name, False, "Ikke konfigurert", configured=False)
+                _set_status(c, name, False, L("Not configured", "Ikke konfigurert"), configured=False)
             return
-        progress(frac, f"Henter fra {name}")
+        progress(frac, fmt("Fetching from {n}", "Henter fra {n}", n=name.capitalize()))
         try:
             count, msg = fn(lambda f, m: progress(frac + f * 0.15, m))
             with db.conn() as c:
                 _set_status(c, name, True, msg, count)
-            result[name] = msg
+            result[name] = text(msg, "en")
         except Exception as e:
-            err = str(e) if isinstance(e, ServiceError) else f"{type(e).__name__}: {e}"
+            err = e.msg if isinstance(e, ServiceError) else f"{type(e).__name__}: {e}"
             with db.conn() as c:
                 _set_status(c, name, False, err)
-            result[name] = f"feil: {err}"
+            result[name] = f"error: {text(err, 'en')}"
+
+    def _roots(name):
+        try:
+            return arr.root_folders(svc[name])
+        except Exception:  # optional – the mapping helper simply has less to go on
+            return None
+
+    def _store_roots(c, name, roots):
+        if roots is not None:
+            all_roots = db.kv_get(c, "root_folders", {}) or {}
+            all_roots[name] = roots
+            db.kv_set(c, "root_folders", all_roots)
 
     def do_radarr(p):
         rows = arr.fetch_radarr(svc["radarr"], mp)
+        roots = _roots("radarr")
         with db.conn() as c:
             _replace(c, "radarr_movies", rows)
-        return len(rows), f"{len(rows)} filmer"
+            _store_roots(c, "radarr", roots)
+        return len(rows), fmt("{n} movies", "{n} filmer", n=len(rows))
 
     def do_sonarr(p):
         series, files = arr.fetch_sonarr(svc["sonarr"], mp, p)
+        roots = _roots("sonarr")
         with db.conn() as c:
+            _store_roots(c, "sonarr", roots)
             _replace(c, "sonarr_series", series)
             _replace(c, "sonarr_files", files)
-        return len(series), f"{len(series)} serier, {len(files)} episodefiler"
+        return len(series), fmt("{n} series, {f} episode files", "{n} serier, {f} episodefiler", n=len(series), f=len(files))
 
     def do_plex(p):
         items, parts, libs = plex.fetch(svc["plex"], mp, s["protection"]["plex_labels"], p)
@@ -96,7 +113,7 @@ def run(progress: Progress) -> dict:
             _replace(c, "plex_items", items)
             _replace(c, "plex_parts", parts)
             db.kv_set(c, "plex_libraries", libs)
-        return len(items), f"{len(items)} elementer i {len(libs)} bibliotek"
+        return len(items), fmt("{n} items in {l} libraries", "{n} elementer i {l} bibliotek", n=len(items), l=len(libs))
 
     def do_tautulli(p):
         with db.conn() as c:
@@ -108,20 +125,22 @@ def run(progress: Progress) -> dict:
                 c.executemany("INSERT OR REPLACE INTO plays VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
                 c.execute("COMMIT")
             total = c.execute("SELECT COUNT(*) FROM plays").fetchone()[0]
-        return total, f"{total} avspillinger ({len(rows)} nye/oppdatert)"
+        return total, fmt("{t} plays ({n} new/updated)", "{t} avspillinger ({n} nye/oppdatert)", t=total, n=len(rows))
 
     def do_seerr(p):
         rows = seerr.fetch_requests(svc["seerr"])
         with db.conn() as c:
             _replace(c, "requests", rows)
-        return len(rows), f"{len(rows)} forespørsler"
+        return len(rows), fmt("{n} requests", "{n} forespørsler", n=len(rows))
 
     def do_truenas(p):
         info = truenas.fetch(svc["truenas"])
         with db.conn() as c:
             db.kv_set(c, "truenas", {**info, "fetched": time.time()})
         n = info.get("root_snapshots")
-        return len(info["datasets"]), f"{len(info['datasets'])} datasett, snapshots på rot: {n if n is not None else 'ukjent'}"
+        return len(info["datasets"]), fmt("{d} datasets, snapshots on the root dataset: {n}",
+                                          "{d} datasett, snapshots på rotdatasettet: {n}", d=len(info["datasets"]),
+                                          n=n if n is not None else "?")
 
     step("radarr", 0.0, do_radarr)
     step("sonarr", 0.15, do_sonarr)
@@ -131,12 +150,12 @@ def run(progress: Progress) -> dict:
     step("truenas", 0.9, do_truenas)
     with db.conn() as c:
         db.kv_set(c, "last_sync", time.time())
-    progress(1.0, "Synkronisering ferdig")
+    progress(1.0, L("Sync finished", "Synkronisering ferdig"))
     return result
 
 
 def reset_history():
-    """Brukes hvis Tautulli-databasen er byttet ut."""
+    """Used if the Tautulli database has been replaced."""
     with db.conn() as c:
         c.execute("DELETE FROM plays")
         db.audit(c, "reset_history", {})

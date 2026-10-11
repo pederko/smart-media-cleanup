@@ -1,4 +1,4 @@
-"""SQLite-lag. Én fil i /data, WAL-modus, ny tilkobling per bruk."""
+"""SQLite layer. One file in /data, WAL mode, a new connection per use."""
 from __future__ import annotations
 
 import json
@@ -110,13 +110,18 @@ def conn() -> Iterator[sqlite3.Connection]:
         c.close()
 
 
-# Kolonner lagt til etter 0.1.0. Legges alltid til sist, slik at INSERT ... VALUES(?) stemmer.
+# Columns added after 0.1.0. Always appended last, so INSERT ... VALUES(?) still lines up.
 MIGRATIONS = {
     "requests": [("plex_username", "TEXT"), ("rating_key", "TEXT")],
     "plays": [("username", "TEXT")],
     "titles": [("requests", "TEXT")],
     "plex_items": [("thumb", "TEXT")],
+    "suggestions": [("name", "TEXT")],
 }
+
+# Bumped when stored analysis results change shape. A bump clears the derived tables and
+# triggers a new analysis at startup (raw data from scans and services is kept).
+ANALYSIS_VERSION = 2
 
 
 def init() -> None:
@@ -127,6 +132,13 @@ def init() -> None:
             for name, typ in cols:
                 if name not in have:
                     c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
+        if (kv_get(c, "analysis_version", 1) or 1) < ANALYSIS_VERSION:
+            for tbl in ("suggestions", "suggestion_files", "duplicate_groups"):
+                c.execute(f"DELETE FROM {tbl}")
+            c.execute("DELETE FROM kv WHERE key LIKE 'releases:%'")  # cached searches with old texts
+            kv_set(c, "analysis_version", ANALYSIS_VERSION)
+            if c.execute("SELECT 1 FROM files LIMIT 1").fetchone():
+                kv_set(c, "needs_analysis", True)  # upgrade of an existing install
 
 
 def kv_get(c: sqlite3.Connection, key: str, default: Any = None) -> Any:
@@ -150,7 +162,7 @@ def audit(c: sqlite3.Connection, action: str, detail: Any) -> None:
 
 
 def backup(keep: int = 7) -> str:
-    """Konsistent kopi av databasen og innstillingene til /data/backups (SQLite online backup)."""
+    """Consistent copy of the database and settings to /data/backups (SQLite online backup)."""
     import shutil
     dest_dir = settings.DATA_DIR / "backups"
     dest_dir.mkdir(parents=True, exist_ok=True)

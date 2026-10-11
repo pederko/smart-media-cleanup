@@ -6,11 +6,14 @@ from typing import Any
 
 import httpx
 
+from ..i18n import L, AppError, fmt
+
 TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 
-class ServiceError(Exception):
-    """En tjeneste svarte ikke eller svarte med feil. Skal aldri krasje appen."""
+class ServiceError(AppError):
+    """A service did not answer or answered with an error. Must never crash the app."""
+    status = 502
 
 
 def get_json(url: str, *, params: dict | None = None, headers: dict | None = None,
@@ -21,18 +24,19 @@ def get_json(url: str, *, params: dict | None = None, headers: dict | None = Non
             with httpx.Client(timeout=TIMEOUT, verify=verify, follow_redirects=True) as c:
                 r = c.get(url, params=params, headers=headers)
             if r.status_code in (401, 403):
-                raise ServiceError(f"Autentisering avvist ({r.status_code}) av {_host(url)} – sjekk API-nøkkel/token")
+                raise ServiceError(fmt("Authentication refused ({c}) by {h} – check the API key/token",
+                                       "Autentisering avvist ({c}) av {h} – sjekk API-nøkkel/token", c=r.status_code, h=_host(url)))
             if r.status_code == 404:
-                raise ServiceError(f"Fant ikke endepunktet {_path(url)} ({r.status_code})")
+                raise ServiceError(fmt("Endpoint not found: {p} ({c})", "Fant ikke endepunktet {p} ({c})", p=_path(url), c=r.status_code))
             r.raise_for_status()
             return r.json()
         except ServiceError:
             raise
-        except (httpx.HTTPError, ValueError) as e:  # nettverk, timeout, ugyldig JSON
+        except (httpx.HTTPError, ValueError) as e:  # network, timeout, invalid JSON
             last = e
             if attempt < retries:
                 time.sleep(1.5 * (attempt + 1))
-    raise ServiceError(f"Ingen kontakt med {_host(url)}: {type(last).__name__}: {last}")
+    raise ServiceError(fmt("No connection to {h}: {e}", "Ingen kontakt med {h}: {e}", h=_host(url), e=f"{type(last).__name__}: {last}"))
 
 
 def _host(url: str) -> str:
@@ -50,7 +54,7 @@ def _path(url: str) -> str:
 
 
 def ts(value: Any) -> int | None:
-    """ISO-8601 eller epoch -> epoch sekunder."""
+    """ISO-8601 or epoch -> epoch seconds."""
     if value in (None, "", 0):
         return None
     if isinstance(value, (int, float)):
@@ -58,7 +62,7 @@ def ts(value: Any) -> int | None:
     from datetime import datetime
     try:
         v = str(value).replace("Z", "+00:00")
-        # Radarr/Sonarr kan gi 7 desimaler; Python tåler maks 6
+        # Radarr/Sonarr may give 7 decimals; Python accepts at most 6
         v = re.sub(r"\.(\d{6})\d+", r".\1", v)
         dt = datetime.fromisoformat(v)
         if dt.year < 1971:

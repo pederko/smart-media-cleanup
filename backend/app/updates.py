@@ -1,6 +1,6 @@
-"""Ser etter nye utgivelser på GitHub (kun lesing, ingen automatisk oppdatering).
+"""Looks for new releases on GitHub (read only, no automatic update).
 
-Selve oppdateringen gjøres i TrueNAS (Apps → mediacleanup → Update) når imaget bruker :latest.
+The update itself is done in TrueNAS (Apps → the app → Update) when the image uses :latest.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ CHECK_EVERY = 6 * 3600
 
 
 def current_version() -> str:
-    return os.environ.get("SMC_VERSION", "0.13.0")
+    return os.environ.get("SMC_VERSION", "1.0.0")
 
 
 def parse(v: str | None) -> tuple[int, int, int] | None:
@@ -42,7 +42,7 @@ def _fetch_latest() -> dict:
 
 
 def check(force: bool = False) -> dict:
-    """Henter siste release (maks hver 6. time) og lagrer resultatet. Feiler stille."""
+    """Fetches the latest release (at most every 6 hours) and stores the result. Fails silently."""
     if not settings.get().get("updates", {}).get("check", True):
         return status()
     with db.conn() as c:
@@ -53,7 +53,7 @@ def check(force: bool = False) -> dict:
         latest = _fetch_latest()
         cached = {"checked": time.time(), "ok": True, **latest}
     except Exception as e:
-        log.info("Fikk ikke sjekket oppdateringer: %s", e)
+        log.info("Could not check for updates: %s", e)
         cached = {**cached, "checked": time.time(), "ok": False, "error": str(e)}
     with db.conn() as c:
         db.kv_set(c, "update_check", cached)

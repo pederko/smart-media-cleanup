@@ -5,14 +5,14 @@ from app import db, jobs, settings
 
 
 def test_scan_job_with_many_files_and_real_progress(tmp_path, monkeypatch):
-    root = tmp_path / "FILM"
+    root = tmp_path / "Movies"
     for d in range(30):
         folder = root / f"Film {d} (2000)"
         folder.mkdir(parents=True)
         for i in range(100):  # 3000 filer -> fremdrift rapporteres flere ganger midt i skanningen
             (folder / f"f{i}.srt").write_text("x")
     s = settings.get()
-    s["libraries"] = [{"name": "FILM", "host_path": "/mnt/pool1/FILM", "container_path": str(root),
+    s["libraries"] = [{"name": "Movies", "host_path": "/mnt/tank/media/Movies", "container_path": str(root),
                        "kind": "movies", "protected": False}]
     s["scanner"]["throttle_ms_per_1000"] = 0
     monkeypatch.setattr(settings, "get", lambda: s)
@@ -20,14 +20,14 @@ def test_scan_job_with_many_files_and_real_progress(tmp_path, monkeypatch):
     with db.conn() as c:
         jid = c.execute("INSERT INTO jobs(kind,status,progress,message,started) VALUES('scan','running',0,'',?)",
                         (time.time(),)).lastrowid
-    # Fremdriften skal kunne rapporteres hyppig uten å låse databasen
+    # Progress must be reportable often without locking the database
     monkeypatch.setattr(jobs, "PROGRESS_INTERVAL", 0.0)
     s["scanner"]["throttle_ms_per_1000"] = 400  # skanningen varer et par sekunder
     seen = []
     real = jobs._set_live
     monkeypatch.setattr(jobs, "_set_live", lambda j, p, m: (seen.append((p, m)), real(j, p, m)))
 
-    # Andre skrivere i andre tråder (API, planlegger) skal slippe til mens skanningen pågår
+    # Other writers in other threads (API, scheduler) must get in while the scan runs
     import threading
     done, errors, writes = threading.Event(), [], [0]
 
@@ -51,7 +51,7 @@ def test_scan_job_with_many_files_and_real_progress(tmp_path, monkeypatch):
     assert not errors, errors
     assert writes[0] > 5
     assert result["files"] == 3000
-    assert len(seen) >= 3 and any("Skanner FILM" in m for _, m in seen)
+    assert len(seen) >= 3 and any("Skanner Movies" in m["nb"] for _, m in seen)
     with db.conn() as c:
         c.execute("DELETE FROM files")
         c.execute("DELETE FROM dirs")
