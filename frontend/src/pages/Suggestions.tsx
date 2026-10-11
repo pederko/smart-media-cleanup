@@ -3,6 +3,7 @@ import { api, qs, Requester, Savings, Suggestion } from "../api";
 import { bytes, KIND_LABEL, num } from "../format";
 import { ErrorNote, HistoryLine, RequestedBy, RiskPill, ScoreMeter, useFetch, useOpenTitle, useRefreshTick, Poster } from "../components/common";
 import SuggestionDetail from "../components/SuggestionDetail";
+import DeleteDialog from "../components/DeleteDialog";
 
 type ListResp = { total: number; items: Suggestion[]; filtered_savings: Savings };
 type SelResp = Savings & { items: { id: string; label: string; location: string; savings: number; risk: string; kind: string }[] };
@@ -34,6 +35,10 @@ export default function SuggestionsPage() {
   const [sel, setSel] = useState<string[]>(loadSel);
   const [selInfo, setSelInfo] = useState<SelResp | null>(null);
   const [summary, setSummary] = useState(false);
+  const [deleting, setDeleting] = useState<string[] | null>(null);
+  const status = useFetch<{ actions_enabled: boolean }>("/api/status", [tick]);
+  const canDelete = !!status.data?.actions_enabled;
+  const DELETABLE = new Set(["delete_title", "delete_season"]);
   const [debounced, setDebounced] = useState("");
 
   useEffect(() => { const t = setTimeout(() => setDebounced(q), 250); return () => clearTimeout(t); }, [q]);
@@ -155,7 +160,11 @@ export default function SuggestionsPage() {
                 </tr>
                 {open === s.id && (
                   <tr className="detail"><td colSpan={7}><SuggestionDetail id={s.id} />
-                    {s.title_key && <p style={{ marginBottom: 0 }}><button className="btn small" onClick={() => openTitle(s.title_key!)}>Åpne tittel</button></p>}
+                    <p style={{ marginBottom: 0, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {s.title_key && <button className="btn small" onClick={() => openTitle(s.title_key!)}>Åpne tittel</button>}
+                      {canDelete && DELETABLE.has(s.kind) && (s.radarr_id != null || s.sonarr_id != null) &&
+                        <button className="btn small danger" onClick={() => setDeleting([s.id])}>{s.kind === "delete_season" ? "Slett sesongen…" : "Slett…"}</button>}
+                    </p>
                   </td></tr>
                 )}
               </Fragment>
@@ -179,9 +188,10 @@ export default function SuggestionsPage() {
           <div className="small muted grow">
             {selInfo && selInfo.naive_sum && selInfo.naive_sum > selInfo.freed ? `Overlapp fjernet: ${bytes(selInfo.naive_sum - selInfo.freed)}. ` : ""}
             {selInfo && selInfo.held > 0 ? `${bytes(selInfo.held)} holdes av hardlinker utenfor utvalget. ` : ""}
-            Skrivebeskyttet modus: utfør slettingen i Radarr, Sonarr eller Plex.
+            {canDelete ? "Filmer og serier i Radarr/Sonarr kan slettes herfra. Resten gjøres manuelt." : "Skrivebeskyttet: utfør slettingen i Radarr, Sonarr eller Plex, eller slå på sletting under Innstillinger."}
           </div>
           <button className="btn" onClick={() => setSummary(true)}>Vis oppsummering</button>
+          {canDelete && <button className="btn danger" onClick={() => setDeleting(sel)}>Slett valgte…</button>}
           <button className="btn" onClick={() => setSel([])}>Tøm utvalget</button>
         </div>
       )}
@@ -204,6 +214,10 @@ export default function SuggestionsPage() {
             <p className="small muted">Kolonnen «Alene» viser hvert forslag for seg; totalen over teller hver fil én gang. Denne versjonen sletter ingenting. Bruk listen som arbeidsliste i Radarr/Sonarr, eller eksporter CSV.</p>
           </aside>
         </>
+      )}
+      {deleting && (
+        <DeleteDialog ids={deleting} onClose={() => setDeleting(null)}
+          onDone={(done) => setSel((cur) => cur.filter((id) => !done.includes(id)))} />
       )}
     </>
   );

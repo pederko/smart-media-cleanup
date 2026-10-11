@@ -295,3 +295,103 @@ def test_posters_from_plex_cached_and_radarr_fallback(client):
     # Serie med plakat på serie-elementet i Plex
     assert client.get(f"/api/poster/{_title('Old Show')['key']}").status_code == 200
     assert client.get("/api/poster/finnes:ikke").status_code == 404
+
+
+
+# ------------------------------------------------------------------ sletting (kjøres sist)
+
+def _sid(name, kind, scope=None):
+    for s in _sugg(None, name=name, kind=kind):
+        if scope is None or s["scope"] == scope:
+            return s["id"]
+    raise AssertionError((name, kind, scope))
+
+
+@pytest.fixture
+def no_refresh(monkeypatch):
+    from app import jobs
+    calls = []
+    monkeypatch.setattr(jobs, "enqueue", lambda kind: calls.append(kind) or {"id": 0})
+    return calls
+
+
+def _enable(client, on=True):
+    st = client.get("/api/settings").json()
+    st["actions"] = {"enabled": on}
+    client.put("/api/settings", json=st)
+
+
+def test_delete_disabled_by_default(client, no_refresh):
+    _enable(client, False)
+    big = _sid("Big Movie", "delete_title")
+    p = client.post("/api/actions/plan", json={"ids": [big]}).json()
+    assert p["enabled"] is False
+    r = client.post("/api/actions/execute", json={"ids": [big], "token": p["token"]})
+    assert r.status_code == 403
+    assert not ms.WRITES
+
+
+def test_delete_plan_rules(client, no_refresh):
+    _enable(client)
+    ids = [_sid("Big Movie", "delete_title"), _sid("Big Movie", "replace"),
+           _sid("Old Show", "delete_title"), _sid("Old Show", "delete_season", "season:2")]
+    p = client.post("/api/actions/plan", json={"ids": ids}).json()
+    by = {i["id"]: i for i in p["items"]}
+    assert by[ids[0]]["executable"] and by[ids[0]]["service"] == "radarr"
+    assert not by[ids[1]]["executable"] and "kvalitetsprofil" in by[ids[1]]["reason"]
+    assert by[ids[2]]["executable"] and by[ids[2]]["service"] == "sonarr"
+    assert not by[ids[3]]["executable"] and "hele serien" in by[ids[3]]["reason"]
+    assert p["executable"] == 2 and p["freed"] > 0
+    # Endret utvalg -> gammel token avvises
+    r = client.post("/api/actions/execute", json={"ids": ids[:1], "token": p["token"]})
+    assert r.status_code == 409
+
+
+def test_protected_never_executable():
+    from app import actions
+    d = actions._describe({"id": "x", "label": "K", "location": "", "kind": "delete_title", "risk": "lav",
+                           "savings": 1, "title_key": "k", "scope": "title"},
+                          {"protected": 1, "protect_reason": "Biblioteket Barn er beskyttet", "radarr_id": 9,
+                           "sonarr_id": None})
+    assert d["executable"] is False and "Barn" in d["reason"]
+
+
+def test_delete_movie_via_radarr(client, no_refresh):
+    _enable(client)
+    big = _sid("Big Movie", "delete_title")
+    p = client.post("/api/actions/plan", json={"ids": [big]}).json()
+    r = client.post("/api/actions/execute", json={"ids": [big], "token": p["token"]}).json()
+    assert r["done"] == 1 and r["results"][0]["status"] == "utført"
+    assert ("DELETE", "/radarr/api/v3/movie/1", {"deleteFiles": "true", "addImportExclusion": "false"}, None) in ms.WRITES
+    assert r["freed_estimate"] == 80 * GB
+    assert no_refresh == ["refresh"]
+    h = client.get("/api/actions/history").json()["items"]
+    assert h[0]["title"] == "Big Movie" and h[0]["status"] == "utført"
+
+
+def test_delete_season_unmonitors_then_deletes_files(client, no_refresh):
+    _enable(client)
+    s2 = _sid("Old Show", "delete_season", "season:2")
+    p = client.post("/api/actions/plan", json={"ids": [s2]}).json()
+    assert p["items"][0]["executable"]
+    ms.WRITES.clear()
+    r = client.post("/api/actions/execute", json={"ids": [s2], "token": p["token"]}).json()
+    assert r["done"] == 1, r
+    put = [w for w in ms.WRITES if w[0] == "PUT"][0]
+    assert {s["seasonNumber"]: s["monitored"] for s in put[3]["seasons"]} == {1: True, 2: False}
+    bulk = [w for w in ms.WRITES if w[1].endswith("/bulk")][0]
+    assert sorted(bulk[3]["episodeFileIds"]) == [13, 14]
+    assert ms.WRITES.index(put) < ms.WRITES.index(bulk)  # avovervåk før sletting
+
+
+def test_delete_stops_when_folder_changed(client, no_refresh):
+    _enable(client)
+    twin = _sid("Twin", "delete_title")
+    ms.PATH_OVERRIDE[("movie", 3)] = "/FILM/Noe annet (2012)"
+    ms.WRITES.clear()
+    p = client.post("/api/actions/plan", json={"ids": [twin]}).json()
+    r = client.post("/api/actions/execute", json={"ids": [twin], "token": p["token"]}).json()
+    assert r["results"][0]["status"] == "feilet" and "stemmer ikke" in r["results"][0]["detail"]
+    assert not [w for w in ms.WRITES if w[0] == "DELETE"]
+    assert no_refresh == []
+    ms.PATH_OVERRIDE.clear()

@@ -286,3 +286,7 @@ table.compact a:hover { text-decoration: underline; text-underline-offset: 3px; 
 .drawer-head { display: flex; gap: 20px; align-items: flex-end; margin: 8px 0 20px; }
 .drawer-head h1 { margin-bottom: 6px; }
 @media (max-width: 560px) { .poster.l { width: 84px; height: 126px; } }
+
+.btn.danger { background: transparent; color: var(--risk-hoy); border-color: var(--risk-hoy); }
+.btn.danger:hover { background: var(--risk-hoy); color: var(--bg); }
+.ro.on::before { background: var(--risk-middels); }

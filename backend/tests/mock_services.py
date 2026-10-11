@@ -223,6 +223,66 @@ def r_cover(mid: int, name: str, x_api_key: str = Header(None)):
     return Response(JPEG, media_type="image/jpeg")
 
 
+# ---- skrivende kall (sletting) – registreres i WRITES ----
+WRITES: list = []
+DELETED: set = set()
+PATH_OVERRIDE: dict = {}
+
+
+@app.get("/radarr/api/v3/movie/{mid}")
+def r_movie(mid: int, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    if ("movie", mid) in DELETED:
+        raise HTTPException(404)
+    m = next(m for m in MOVIES if m[0] == mid)
+    return {"id": mid, "title": m[1], "path": PATH_OVERRIDE.get(("movie", mid), m[3])}
+
+
+@app.delete("/radarr/api/v3/movie/{mid}")
+def r_movie_delete(mid: int, request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    WRITES.append(("DELETE", f"/radarr/api/v3/movie/{mid}", dict(request.query_params), None))
+    DELETED.add(("movie", mid))
+    return {}
+
+
+def _series_obj(sid):
+    s = next(x for x in SERIES if x[0] == sid)
+    return {"id": sid, "title": s[1], "path": PATH_OVERRIDE.get(("series", sid), s[3]),
+            "seasons": [{"seasonNumber": n, "monitored": m} for n, m in s[6].items()]}
+
+
+@app.get("/sonarr/api/v3/series/{sid}")
+def s_one(sid: int, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    if ("series", sid) in DELETED:
+        raise HTTPException(404)
+    return _series_obj(sid)
+
+
+@app.put("/sonarr/api/v3/series/{sid}")
+async def s_put(sid: int, request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    body = await request.json()
+    WRITES.append(("PUT", f"/sonarr/api/v3/series/{sid}", {}, body))
+    return body
+
+
+@app.delete("/sonarr/api/v3/series/{sid}")
+def s_delete(sid: int, request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    WRITES.append(("DELETE", f"/sonarr/api/v3/series/{sid}", dict(request.query_params), None))
+    DELETED.add(("series", sid))
+    return {}
+
+
+@app.delete("/sonarr/api/v3/episodefile/bulk")
+async def s_bulk(request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    WRITES.append(("DELETE", "/sonarr/api/v3/episodefile/bulk", {}, await request.json()))
+    return {}
+
+
 @app.get("/tautulli/api/v2")
 def t_api(apikey: str, cmd: str, start: int = 0, length: int = 25):
     if apikey != KEY:

@@ -15,6 +15,7 @@ type S = {
   scanner: Record<string, number>;
   sync: { interval_hours: number };
   updates?: { check: boolean };
+  actions?: { enabled: boolean };
   _env_locked: string[];
 };
 
@@ -185,6 +186,17 @@ export default function SettingsPage() {
       </section>
 
       <section className="section">
+        <h2>Sletting</h2>
+        <label className="check"><input type="checkbox" checked={!!s.actions?.enabled} onChange={(e) => setS({ ...s, actions: { enabled: e.target.checked } })} />Tillat sletting av filmer og serier via Radarr og Sonarr</label>
+        <ul className="conseq small muted" style={{ maxWidth: 720 }}>
+          <li>Filmer slettes i Radarr og serier i Sonarr, med filer. Filmer legges ikke på ekskluderingslisten.</li>
+          <li>Enkeltsesonger avovervåkes i Sonarr før episodefilene slettes, så de ikke lastes ned igjen.</li>
+          <li>Beskyttede titler (Barn, tagger, etiketter) kan aldri slettes. Alt annet – ekstra versjoner, kopier, nedlastinger – gjøres fortsatt manuelt.</li>
+          <li>Appen selv har bare lesetilgang til mediemappene. Alt som slettes, loggføres under Logg.</li>
+        </ul>
+      </section>
+
+      <section className="section">
         <h2>Oppdateringer</h2>
         <UpdateBox enabled={s.updates?.check ?? true} onToggle={(v) => setS({ ...s, updates: { check: v } })} />
       </section>
@@ -276,6 +288,44 @@ export function JobsPage() {
           </tbody>
         </table>
       </div>
+    </>
+  );
+}
+
+
+type Action = { id: number; ts: number; title: string; action: string; service: string | null; status: string; detail: string; bytes: number };
+
+export function LogPage() {
+  const tick = useRefreshTick();
+  const { data, error } = useFetch<{ items: Action[]; enabled: boolean }>("/api/actions/history", [tick]);
+  const total = data?.items.filter((a) => a.status === "utført").reduce((s, a) => s + (a.bytes || 0), 0) ?? 0;
+  return (
+    <>
+      <h1>Logg over slettinger</h1>
+      <p className="lede">Alt appen har slettet via Radarr og Sonarr, med resultat. {data && !data.enabled && "Sletting er slått av nå."}</p>
+      <ErrorNote error={error} />
+      {data && data.items.length === 0 && <div className="empty">Ingenting er slettet fra appen ennå.</div>}
+      {data && data.items.length > 0 && (
+        <>
+          <p className="small muted">{data.items.filter((a) => a.status === "utført").length} utført, omtrent {bytes(total)} frigjort.</p>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Tidspunkt</th><th>Tittel</th><th>Status</th><th>Detaljer</th><th className="r">Plass</th></tr></thead>
+              <tbody>
+                {data.items.map((a) => (
+                  <tr key={a.id}>
+                    <td className="small muted num">{new Date(a.ts * 1000).toLocaleString("nb-NO")}</td>
+                    <td>{a.title}<div className="small faint">{a.action === "delete_season" ? "Sesong" : "Hel tittel"}, {a.service === "radarr" ? "Radarr" : a.service === "sonarr" ? "Sonarr" : a.service}</div></td>
+                    <td><i className={`dot ${a.status === "utført" ? "ok" : a.status === "feilet" ? "bad" : "off"}`} />{a.status}</td>
+                    <td className="small muted">{a.detail}</td>
+                    <td className="r num">{a.status === "utført" ? bytes(a.bytes) : ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </>
   );
 }

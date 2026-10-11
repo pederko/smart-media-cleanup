@@ -74,6 +74,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "sync": {"interval_hours": 6},
     "updates": {"check": True},
+    "actions": {"enabled": False},
 }
 
 ENV_MAP = {

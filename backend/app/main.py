@@ -17,10 +17,10 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db, jobs, posters, settings, sync, updates
+from . import actions, db, jobs, posters, settings, sync, updates
 from .analysis import engine
 
-VERSION = os.environ.get("SMC_VERSION", "0.4.0")
+VERSION = os.environ.get("SMC_VERSION", "0.5.0")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -28,6 +28,7 @@ logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
 @asynccontextmanager
 async def lifespan(_app):
     db.init()
+    actions.init()
     jobs.start(schedule=os.environ.get("SMC_DISABLE_SCHEDULER") != "1")
     with db.conn() as c:
         if not db.kv_get(c, "first_start"):
@@ -109,7 +110,32 @@ FROM suggestions s LEFT JOIN titles t ON t.key = s.title_key
 # ------------------------------------------------------------ endepunkter
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": VERSION, "read_only": True}
+    return {"ok": True, "version": VERSION, "read_only": not actions.enabled()}
+
+
+class ActionRequest(BaseModel):
+    ids: list[str]
+    token: str | None = None
+
+
+@app.post("/api/actions/plan")
+def actions_plan(req: ActionRequest):
+    return actions.plan(req.ids)
+
+
+@app.post("/api/actions/execute")
+def actions_execute(req: ActionRequest):
+    try:
+        return actions.execute(req.ids, req.token or "")
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get("/api/actions/history")
+def actions_history():
+    return {"items": actions.history(), "enabled": actions.enabled()}
 
 
 @app.get("/api/poster/{key:path}")
@@ -131,7 +157,8 @@ def status():
     with db.conn() as c:
         return {
             "version": VERSION,
-            "read_only": True,
+            "read_only": not actions.enabled(),
+            "actions_enabled": actions.enabled(),
             "services": db.kv_get(c, "service_status", {}),
             "last_sync": db.kv_get(c, "last_sync"),
             "last_scan": db.kv_get(c, "last_scan"),

@@ -2,7 +2,7 @@
 
 Skrivebeskyttet analyse av mediebiblioteket på TrueNAS SCALE. Appen kobler filene på disk til Radarr, Sonarr, Plex og Tautulli og gir rangerte, forklarte forslag til hva som kan slettes, erstattes eller ryddes – med plassbesparelse beregnet uten dobbelttelling.
 
-**Appen sletter ingenting.** Mediemappene monteres `:ro`, og appen gjør bare lesende API-kall. Selve slettingen gjør du i Radarr, Sonarr eller Plex.
+**Appen har bare lesetilgang til mediemappene** (`:ro`). Sletting er av som standard. Slås den på, slettes filmer og serier via Radarr og Sonarr – aldri direkte i filsystemet.
 
 ![Oversikt](docs/screenshots/oversikt.png)
 
@@ -60,7 +60,7 @@ Forslagstyper:
 | Tiltak | Hvordan |
 |---|---|
 | Ingen skrivetilgang til media | Alle mediemapper monteres `:ro` i YAML |
-| Ingen sletting i koden | Ingen slette-endepunkter; API-klientene gjør bare `GET` |
+| Sletting bare via Radarr/Sonarr | Av som standard. Når den er på, kaller appen Radarrs og Sonarrs egne slette-API-er; selve filene slettes av dem |
 | Minst mulig privilegier | Kjører som `568:568` (apps), `cap_drop: ALL`, `no-new-privileges`, skrivebeskyttet rotfilsystem |
 | Bare nødvendige mapper | Kun FILM, TV, Barn og tmp monteres. `app-config`, `ix-applications`, `frigate-recordings` m.fl. er utenfor rekkevidde |
 | Ingen ZFS-tilgang | Ingen `zfs`-kommandoer. Valgfri TrueNAS-integrasjon bruker en API-nøkkel med rollen *Read-Only Admin* |
@@ -68,7 +68,23 @@ Forslagstyper:
 | Beskyttelse | Barn-biblioteket, tagger (`keep`, `behold`) i Radarr/Sonarr og etiketter i Plex gir aldri forslag |
 | Logg | Endringer i innstillinger loggføres i databasen (`audit`) |
 
-Sletting via Radarr/Sonarr kan legges til i en senere fase, med kurv, eksplisitt bekreftelse og revisjonslogg. Filsystemet skal fortsatt være skrivebeskyttet for appen.
+### Sletting
+
+Slås på under **Innstillinger → Sletting**. Da kan du:
+
+| Hva | Hvordan |
+|---|---|
+| Hel film | Slettes i Radarr med filer (`deleteFiles`). Legges ikke på ekskluderingslisten. |
+| Hel serie | Slettes i Sonarr med filer. |
+| Én sesong | Sesongen avovervåkes i Sonarr, deretter slettes episodefilene. |
+
+Ekstra versjoner, identiske kopier, nedlastinger og titler utenfor Radarr/Sonarr gjøres fortsatt manuelt.
+
+Sikringer, uavhengig av hva som velges i grensesnittet:
+- Beskyttede titler (Barn, tagger, Plex-etiketter, beskyttede stier) avvises av serveren.
+- Først vises en oppsummering av hva som slettes og hvor mye som frigjøres. Bare akkurat det som ble vist utføres – er analysen endret i mellomtiden, avvises slettingen og oppsummeringen må åpnes på nytt.
+- Rett før hver sletting hentes tittelen på nytt fra Radarr/Sonarr. Stemmer ikke mappen med analysen, stoppes den slettingen.
+- Alt loggføres under **Logg**. Etterpå startes en full oppdatering automatisk.
 
 ## Installasjon på TrueNAS SCALE 25.10
 
@@ -335,4 +351,4 @@ Testene starter etterligninger av Radarr, Sonarr, Plex og Tautulli, lager glisne
 - Identiske kopier avgjøres med størrelse + delvis hash (start, midt, slutt). Det er i praksis sikkert for videofiler, men er ikke en full hash.
 - Mapper med uendret mtime stat'es ikke ved inkrementell skanning. Filer som endres på stedet uten at mappen endres, fanges av den ukentlige fullskanningen.
 - Plex-etiketter brukes til beskyttelse for filmer og serier, ikke enkeltepisoder.
-- Appen sletter ingenting i denne versjonen (bevisst).
+- Sletting gjelder bare filmer og serier i Radarr/Sonarr. Plex fjerner titlene ved neste bibliotekskanning (eller straks, hvis Radarr/Sonarr er satt opp til å varsle Plex).

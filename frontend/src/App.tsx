@@ -5,7 +5,7 @@ import TitleDrawer from "./components/TitleDrawer";
 import OverviewPage from "./pages/Overview";
 import SuggestionsPage from "./pages/Suggestions";
 import { DuplicatesPage, FilesPage, TitlesPage } from "./pages/Lists";
-import SettingsPage, { JobsPage } from "./pages/Settings";
+import SettingsPage, { JobsPage, LogPage } from "./pages/Settings";
 
 const ROUTES: { id: string; label: string }[] = [
   { id: "", label: "Oversikt" },
@@ -14,6 +14,7 @@ const ROUTES: { id: string; label: string }[] = [
   { id: "duplikater", label: "Duplikater" },
   { id: "filer", label: "Største filer" },
   { id: "jobber", label: "Jobber" },
+  { id: "logg", label: "Logg" },
   { id: "innstillinger", label: "Innstillinger" },
 ];
 
@@ -21,7 +22,7 @@ function routeFromHash() {
   return window.location.hash.replace(/^#\/?/, "").split("?")[0];
 }
 
-type Status = { running: Job[]; version: string; services: Record<string, { ok: boolean; configured?: boolean }> };
+type Status = { running: Job[]; version: string; actions_enabled?: boolean; services: Record<string, { ok: boolean; configured?: boolean }> };
 type Update = { available: boolean; current: string; latest: string | null; url: string | null };
 
 export default function App() {
@@ -82,6 +83,7 @@ export default function App() {
     case "duplikater": page = <DuplicatesPage />; break;
     case "filer": page = <FilesPage />; break;
     case "jobber": page = <JobsPage />; break;
+    case "logg": page = <LogPage />; break;
     case "innstillinger": page = <SettingsPage />; break;
     default: page = <OverviewPage go={go} />;
   }
@@ -102,7 +104,7 @@ export default function App() {
               ))}
             </div>
             <div className="side-foot">
-              <span className="ro">Skrivebeskyttet</span>
+              {status?.actions_enabled ? <span className="ro on">Sletting er på</span> : <span className="ro">Skrivebeskyttet</span>}
               <button className="btn small" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? "Lyst tema" : "Mørkt tema"}</button>
               <span className="faint">Versjon {status?.version ?? ""}</span>
               {update?.available && <a className="update-link" href={update.url ?? "#"} target="_blank" rel="noreferrer">Versjon {update.latest} er ute</a>}

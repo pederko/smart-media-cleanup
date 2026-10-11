@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.5.0
+- Sletting via Radarr og Sonarr (av som standard, slås på under Innstillinger → Sletting): hele filmer, hele serier og enkeltsesonger (avovervåkes før filene slettes).
+- Oppsummering før sletting med plass som frigjøres og hva som ikke tas med, og hvorfor. Én bekreftelsesknapp.
+- Serveren avviser beskyttede titler, kontrollerer at utvalget ikke er endret siden oppsummeringen, og sjekker mappen i Radarr/Sonarr rett før hver sletting.
+- Ny side «Logg» med alle slettinger. Full oppdatering startes automatisk etterpå.
+
 ## 0.4.0
 - Plakater for filmer og serier, de samme som i Plex, i forslag, titler, oversikten og tittelvisningen. Radarr/Sonarr brukes som reserve.
 - Bildene hentes av appen (Plex-token forlater aldri serveren) og lagres i `data/posters` i 30 dager.
