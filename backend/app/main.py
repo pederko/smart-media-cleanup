@@ -28,7 +28,7 @@ from . import (actions, arrsetup, db, downloads, dupes, jobs, plexcheck, posters
 from .analysis import engine
 from .i18n import L, AppError, LocalizedJSONResponse, lang_var, localize, parse_lang, text
 
-VERSION = os.environ.get("SMC_VERSION", "1.1.1")
+VERSION = os.environ.get("SMC_VERSION", "1.1.2")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 NO_SCHEDULER = os.environ.get("SMC_DISABLE_SCHEDULER") == "1"
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),

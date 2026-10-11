@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.2
+- **Fixed:** changing the profile Seerr gives new requests failed with «request/body/id is read-only». The server entry is now sent without its id (restoring a backup had the same problem).
+
 ## 1.1.1
 - **Fixed:** stopping remuxes in a profile where a remux shared a group with one other quality (e.g. an anime «Remux-1080p» group with Bluray-1080p) failed with «Groups must contain multiple qualities». The remaining quality is now kept as a plain quality, and the upgrade cutoff follows it.
 

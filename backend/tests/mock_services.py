@@ -680,8 +680,11 @@ async def seerr_test(kind: str, request: Request, x_api_key: str = Header(None))
 async def seerr_put(kind: str, sid: int, request: Request, x_api_key: str = Header(None)):
     _check(x_api_key)
     body = await request.json()
+    if "id" in body:  # like Seerr's OpenAPI validation
+        from fastapi import HTTPException as _H
+        raise _H(400, detail="request/body/id is read-only")
     WRITES.append(("PUT", f"/seerr/api/v1/settings/{kind}/{sid}", {}, body))
-    SEERR_SERVERS[kind][sid] = body
+    SEERR_SERVERS[kind][sid] = {**body, "id": sid}
     return body
 
 

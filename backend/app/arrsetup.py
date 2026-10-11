@@ -779,6 +779,11 @@ def _plan_one(st: _State, ch: dict, work: dict) -> list[dict]:
     raise ActionError(fmt("Unknown change: {o}", "Ukjent endring: {o}", o=op))
 
 
+def _seerr_body(server: dict) -> dict:
+    """Seerr replaces the whole server entry on PUT, but refuses read-only fields (the id is in the URL)."""
+    return {k: v for k, v in server.items() if k != "id"}
+
+
 def _limits_text(p: dict) -> str:
     parts = []
     if p.get("max_ratio_enabled"):
@@ -885,7 +890,7 @@ def execute(changes: list[dict], token: str) -> dict:
         elif kind == "seerr":
             base, h = _seerr_cfg()
             run("seerr", fmt("Seerr «{s}» updated", "Seerr «{s}» oppdatert", s=obj.get("name")),
-                lambda b=base, h=h, o=obj, k=key[1]: _send("seerr", "PUT", f"{b}/api/v1/settings/{k}/{o['id']}", h, body=o))
+                lambda b=base, h=h, o=obj, k=key[1]: _send("seerr", "PUT", f"{b}/api/v1/settings/{k}/{o['id']}", h, body=_seerr_body(o)))
         elif kind == "qbit_prefs":
             def prefs(o=obj):
                 with qbit.Client(_qbit_cfg()) as q:
@@ -992,7 +997,7 @@ def restore(name: str) -> dict:
         base, h = _seerr_cfg()
         o = s_["object"]
         run("seerr", fmt("Seerr «{s}» restored", "Seerr «{s}» gjenopprettet", s=o.get("name")),
-            lambda b_=base, h=h, o=o, k=s_["kind"]: _send("seerr", "PUT", f"{b_}/api/v1/settings/{k}/{o['id']}", h, body=o))
+            lambda b_=base, h=h, o=o, k=s_["kind"]: _send("seerr", "PUT", f"{b_}/api/v1/settings/{k}/{o['id']}", h, body=_seerr_body(o)))
     if b.get("qbit_prefs"):
         def prefs(o=b["qbit_prefs"]):
             with qbit.Client(_qbit_cfg()) as q:

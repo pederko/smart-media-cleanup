@@ -8,7 +8,7 @@ RUN npm run build
 
 # ---------- 2) Runtime ----------
 FROM python:3.12-slim
-ARG APP_VERSION=1.1.1
+ARG APP_VERSION=1.1.2
 LABEL org.opencontainers.image.title="smart-media-cleanup" \
       org.opencontainers.image.description="Explainable cleanup suggestions for a Plex media library on TrueNAS SCALE" \
       org.opencontainers.image.source="https://github.com/pederko/smart-media-cleanup"
