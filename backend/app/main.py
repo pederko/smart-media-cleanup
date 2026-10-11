@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from . import actions, db, downloads, dupes, jobs, plexcheck, posters, releases, settings, swaps, sync, updates, views
 from .analysis import engine
 
-VERSION = os.environ.get("SMC_VERSION", "0.11.0")
+VERSION = os.environ.get("SMC_VERSION", "0.12.0")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -594,6 +594,11 @@ def plex_check_remove_execute(req: KeysRequest):
         raise HTTPException(409, str(e))
     except actions.ActionError as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/api/other-storage")
+def other_storage():
+    return views.other_storage()
 
 
 @app.get("/api/files/largest")

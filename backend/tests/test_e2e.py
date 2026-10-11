@@ -707,3 +707,28 @@ def test_delete_orphan_folder_from_disk(client, no_refresh):
         assert r["done"] == 1 and not (root / "FILM/Orphan (2001)").exists() and (root / "FILM").exists()
     finally:
         _enable_files(client, False)
+
+
+def test_other_storage_breakdown(client):
+    from app import db as _db
+    assert client.get("/api/other-storage").json()["available"] is False
+    lib_total = client.get("/api/other-storage").json()["libs_total"]
+    with _db.conn() as c:
+        _db.kv_set(c, "truenas", {"pool": {"name": "pool1", "size": 1000 * GB, "allocated": lib_total + 300 * GB, "free": 100 * GB},
+                                  "datasets": [
+                                      {"name": "pool1", "mountpoint": "/mnt/pool1", "used": lib_total + 280 * GB,
+                                       "referenced": lib_total + 50 * GB, "usedbysnapshots": 30 * GB},
+                                      {"name": "pool1/.ix-apps", "mountpoint": "/mnt/.ix-apps", "used": 200 * GB,
+                                       "referenced": 200 * GB, "usedbysnapshots": 0}],
+                                  "fetched": 1})
+    try:
+        r = client.get("/api/other-storage").json()
+        assert r["available"] and r["other"] == 300 * GB and r["snapshots"] == 30 * GB
+        top = r["items"][0]
+        assert top["name"] == "pool1/.ix-apps" and top["kind"].startswith("TrueNAS-apper")
+        root = next(i for i in r["items"] if i["name"] == "pool1")
+        assert root["other"] == 50 * GB and set(root["libraries"]) >= {"FILM", "TV"}
+        assert r["overhead"] == 300 * GB - 280 * GB
+    finally:
+        with _db.conn() as c:
+            _db.kv_set(c, "truenas", None)

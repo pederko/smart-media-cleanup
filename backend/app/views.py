@@ -214,3 +214,65 @@ def requester(name: str, view: str = "all", sort: str = "requested", order: str 
         d["watched_by_user"] = t["watched_by_user"]
         out.append(d)
     return {"summary": summary, "total": len(out), "items": out}
+
+
+# ------------------------------------------------------------------ «Annet» på oversikten
+
+def other_storage() -> dict:
+    """Hva som bruker plass i poolen utenfor bibliotekene. Bare lesing – appen har ikke tilgang hit."""
+    s = settings.get()
+    with db.conn() as c:
+        tn = db.kv_get(c, "truenas") or {}
+        lib_alloc = {r[0]: r[1] or 0 for r in c.execute("SELECT library, SUM(COALESCE(alloc,size)) FROM files GROUP BY library")}
+    pool = tn.get("pool") or {}
+    datasets = tn.get("datasets") or []
+    libs = [{"name": l["name"], "path": l["host_path"].rstrip("/"), "alloc": lib_alloc.get(l["name"], 0)} for l in s["libraries"]]
+    libs_total = sum(l["alloc"] for l in libs)
+    if not datasets:
+        return {"available": False, "libs_total": libs_total, "pool": pool,
+                "message": "Koble til TrueNAS under Innstillinger (API-nøkkel med rollen Read-Only Admin) for å se hva «Annet» består av."}
+
+    def owner(path: str) -> str | None:
+        best = None
+        for d in datasets:
+            mp = (d.get("mountpoint") or "").rstrip("/")
+            if mp and (path == mp or path.startswith(mp + "/")) and (best is None or len(mp) > len(best["mountpoint"].rstrip("/"))):
+                best = d
+        return best["name"] if best else None
+
+    in_ds: dict[str, list] = {}
+    for l in libs:
+        o = owner(l["path"])
+        if o:
+            in_ds.setdefault(o, []).append(l)
+    rows = []
+    for d in datasets:
+        own = d.get("referenced") or 0
+        snaps = d.get("usedbysnapshots") or 0
+        lib_here = in_ds.get(d["name"], [])
+        lib_size = sum(l["alloc"] for l in lib_here)
+        other = max(0, own - lib_size)
+        rows.append({"name": d["name"], "mountpoint": d.get("mountpoint"), "used": d.get("used") or 0, "own": own,
+                     "snapshots": snaps, "libraries": [l["name"] for l in lib_here], "library_size": lib_size,
+                     "other": other, "kind": _ds_kind(d["name"]), "compressratio": d.get("compressratio")})
+    other_total = sum(r["other"] + r["snapshots"] for r in rows)
+    rows = [r for r in rows if r["other"] + r["snapshots"] > 0]
+    rows.sort(key=lambda r: -(r["other"] + r["snapshots"]))
+    allocated = pool.get("allocated") or 0
+    return {"available": True, "pool": pool, "fetched": tn.get("fetched"), "libs_total": libs_total,
+            "other": max(0, allocated - libs_total), "datasets_other": other_total,
+            "overhead": max(0, allocated - libs_total - other_total),
+            "snapshots": sum(r["snapshots"] for r in rows), "items": rows}
+
+
+def _ds_kind(name: str) -> str:
+    n = name.lower()
+    if ".ix-apps" in n or "ix-applications" in n or "ix-apps" in n:
+        return "TrueNAS-apper (images og containere)"
+    if "frigate" in n or "recording" in n or "nvr" in n:
+        return "Opptak"
+    if "app-config" in n or "/apps" in n or "appdata" in n:
+        return "Appdata og innstillinger"
+    if "/" not in n:
+        return "Rotdatasettet"
+    return ""

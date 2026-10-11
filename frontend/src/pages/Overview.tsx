@@ -173,13 +173,13 @@ function Capacity({ data }: { data: Overview }) {
             </a>
           );
         })}
-        {other > 0 && <div className="cap-seg" style={{ width: pct(other), background: "var(--lib-other)" }} title={`Annet: ${bytes(other)}`} />}
+        {other > 0 && <a href="#/annet" className="cap-seg" style={{ width: pct(other), background: "var(--lib-other)" }} title={`Annet: ${bytes(other)}. Klikk for detaljer.`} />}
       </div>
       <div className="cap-legend">
         {data.libraries.map((l, i) => (
           <a key={l.library} href={libHref(l.kind)} className="cap-key"><i className="k" style={{ background: libColor(l.library, i) }} /><b>{l.library}</b> {bytes(l.alloc)}{l.protected ? <span className="faint"> (beskyttet)</span> : null}</a>
         ))}
-        {other > 0 && <span><i className="k" style={{ background: "var(--lib-other)" }} /><b>Annet</b> {bytes(other)}</span>}
+        {other > 0 && <a href="#/annet" className="cap-key"><i className="k" style={{ background: "var(--lib-other)" }} /><b>Annet</b> {bytes(other)}</a>}
         <span><i className="k hatch" />Kan frigjøres {bytes(reclaimTotal)}</span>
         <span className="muted">Ledig {bytes(free)}</span>
       </div>

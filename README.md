@@ -46,6 +46,7 @@ Ingenting slettes uten en oppsummering og ett bekreftende klikk, og alt loggfør
 - **Finn mindre versjon og bytt:** søk i indekserne via Radarr (film) eller Sonarr (sesongpakker) etter mindre utgaver, med anbefaling. «Bytt» laster ned den nye først og bytter etterpå. Se [Bytte til mindre versjon](#bytte-til-mindre-versjon).
 - **Sletting (valgfritt):** filmer, serier og enkeltsesonger via Radarr/Sonarr, og duplikater og nedlastinger direkte på disk. Av som standard.
 - **Logg:** alt som er slettet fra appen, med resultat og frigjort plass.
+- **Annet i poolen:** klikk «Annet» i kapasitetsstolpen. Viser (med TrueNAS-integrasjonen) hvilke datasett og snapshots som bruker plass utenfor bibliotekene, og hvor de ryddes. Bare visning – appen har ikke tilgang dit.
 - **Plakater** hentes fra Plex (eller Radarr/Sonarr) og caches lokalt i 30 dager.
 - **Oppdateringsvarsel:** et banner viser når en ny versjon er publisert på GitHub.
 

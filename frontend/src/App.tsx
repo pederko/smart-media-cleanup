@@ -8,6 +8,7 @@ import { FilesPage, TitlesPage } from "./pages/Lists";
 import DuplicatesPage from "./pages/Duplicates";
 import DownloadsPage from "./pages/Downloads";
 import PlexCheckPage from "./pages/PlexCheck";
+import OtherPage from "./pages/Other";
 import SettingsPage, { JobsPage, LogPage } from "./pages/Settings";
 import { LibraryPage, UserPage, UsersPage } from "./pages/Library";
 
@@ -91,6 +92,7 @@ export default function App() {
   switch (section) {
     case "nedlastinger": page = <DownloadsPage />; break;
     case "plex": page = <PlexCheckPage />; break;
+    case "annet": page = <OtherPage />; break;
     case "filmer": page = <LibraryPage kind="movie" />; break;
     case "serier": page = <LibraryPage kind="series" />; break;
     case "brukere": page = param ? <UserPage name={param} /> : <UsersPage />; break;

@@ -1,5 +1,8 @@
 # Endringslogg
 
+## 0.12.0
+- «Annet» i kapasitetsstolpen er klikkbar: ny side som viser hvilke datasett (apper, appdata, opptak, rotdatasettet) og snapshots som bruker plassen utenfor bibliotekene, med råd om hvor det ryddes. Bare visning – appen har med vilje ikke tilgang til disse mappene.
+
 ## 0.11.0
 - **Plex-avvik → I Plex, mangler på disk:** kryss av og «Fjern fra Plex». Hele serien fjernes hvis alt mangler, ellers bare episodene (eller versjonene) som mangler. Appen kontrollerer rett før hvert kall at filene ikke finnes og at mappen er montert. Krever «Allow media deletion» i Plex.
 - **Plex-avvik → På disk, ikke i Plex:** mapper som verken er i Radarr, Sonarr eller Plex kan slettes direkte fra disk. Også fra tittelvisningen («Slett mappen fra disk»). Samme bryter og skrivetilgang som duplikater, og stopper hvis mappen har endret seg siden skanning.
