@@ -46,6 +46,7 @@ Utviklerdokumentasjonen (kodestruktur, tester, språkkonvensjoner) finnes i den 
 | **Nedlastinger** | Hva som ligger i nedlastingsmappen, om det er importert, og hva som trygt kan fjernes. |
 | **Plex-avvik** | Filer på disk som Plex ikke kjenner (med sannsynlig årsak), og Plex-oppføringer der filene er borte. |
 | **Annen lagring** | Med TrueNAS-integrasjonen: hvilke datasett og snapshots som bruker plassen utenfor bibliotekene, og hvor de ryddes. Kun lesing. |
+| **Nedlastingsregler** | Hvordan Radarr, Sonarr, Seerr og qBittorrent er satt opp, sammenlignet med TRaSH Guides: størrelsesgrenser per kvalitet, kvalitetsprofiler (remuxer, custom formats som drar opp størrelsen), Seerrs standardprofil og delingsgrenser. Endres med én bekreftelse; en sikkerhetskopi lagres først. |
 | **Aktivitet** | Bakgrunnsjobber, pågående bytter og loggen over alt appen har slettet. |
 
 | Forslag med forklaring | Bytt kvalitet |
@@ -55,6 +56,10 @@ Utviklerdokumentasjonen (kodestruktur, tester, språkkonvensjoner) finnes i den 
 | Tittelpanel | Innstillinger: biblioteker og stier |
 |---|---|
 | ![Tittel](screenshots/title.png) | ![Innstillinger](screenshots/settings.png) |
+
+| Nedlastingsregler | Størrelsesgrenser |
+|---|---|
+| ![Nedlastingsregler](screenshots/rules.png) | ![Størrelsesgrenser](screenshots/rules-sizes.png) |
 
 <img src="screenshots/mobile.png" alt="Mobil" width="280">
 
@@ -83,6 +88,7 @@ Utviklerdokumentasjonen (kodestruktur, tester, språkkonvensjoner) finnes i den 
 | Minst mulig privilegier | Kjører som `568:568` (apps), `cap_drop: ALL`, `no-new-privileges`, skrivebeskyttet rotfilsystem. Bare mappene du monterer er synlige; appdata, `ix-apps` og lignende er utenfor rekkevidde. |
 | Ingen ZFS-tilgang | Ingen `zfs`-kommandoer. Den valgfrie TrueNAS-integrasjonen bruker en API-nøkkel med rollen *Read-Only Admin*. Snapshots røres aldri. |
 | Hemmeligheter | Lagres i `/data/settings.json` (modus 600) eller som miljøvariabler, maskert i API og grensesnitt. Nettleseren snakker bare med appen, så Plex-tokenet og API-nøklene forlater aldri serveren. |
+| Nedlastingsregler | Størrelsesgrenser, profiler, Seerr- og qBittorrent-innstillinger endres bare etter en gjennomgang, og tjenestene leses på nytt først. Hver endret innstilling sikkerhetskopieres til `/data/backups/arr-setup-*.json` (modus 600) og kan gjenopprettes fra siden. Torrenter fjernes bare når de er ferdige og innholdet finnes i et bibliotek. |
 | Loggført | Hver sletting, bytte og Plex-endring vises under Aktivitet → Slettelogg og lagres i databasen (`audit`). |
 
 ## Installere på TrueNAS SCALE
@@ -156,6 +162,7 @@ Oversikten viser en sjekkliste til alt er på plass.
    | Tautulli | `http://<nas-ip>:<port>` | Settings → Web Interface → API key |
    | Seerr (valgfritt) | `http://<nas-ip>:<port>` | Settings → General → API Key |
    | TrueNAS (valgfritt) | `https://<nas-ip>` | API-nøkkel for en bruker med rollen *Read-Only Admin* |
+   | qBittorrent (valgfritt) | `http://<nas-ip>:<port>` | Brukernavn og passord til Web UI |
 
    Bruk NAS-ens LAN-IP – `localhost` peker til appens egen container.
 3. **Stimapping** – Radarr, Sonarr og Plex ser vanligvis mappene under andre stier (f.eks. `/movies` inne i sine containere). Etter første synkronisering leser appen rotmappene deres og foreslår mappinger ut fra mappenavn; trykk **Bruk** og lagre.
@@ -170,11 +177,24 @@ Oversikten viser en sjekkliste til alt er på plass.
 - **Nedlastinger:** filtrer på *Kan slettes*. Fjern torrenter som fortsatt seedes i nedlastingsklienten først.
 - **Plex-avvik:** be Plex skanne en mappe på nytt, slett mapper som bare finnes på disk, eller fjern Plex-oppføringer der filene er borte (krever *Allow media deletion* i Plex → Settings → Library).
 
+### Nedlastingsregler: stopp nye store filer og evig deling
+
+Rydding hjelper én gang; reglene bestemmer hva som kommer inn etterpå. Under **Forebygg → Nedlastingsregler**:
+
+- **Anbefalinger** viser hva som avviker fra anbefalt oppsett. Huk av det du vil, trykk **Se over…**, sjekk oppsummeringen og utfør.
+- **Størrelsesgrenser**: velg *Balansert* (anbefalt), *Plassbesparende* eller *TRaSH Guides* og juster enkeltverdier. Størrelser vises per film (2 t) eller episode (45 min). Eksisterende filer røres ikke – tabellen viser hvor mange som er over de nye grensene, og *Bytt kvalitet* kan erstatte dem.
+- **Kvalitetsprofiler**: stopp remuxer, BR-DISK og Raw-HD i en profil, eller opprett en anbefalt profil basert på en av dine (beholder custom formats). TRaSH sitt fulle sett med custom formats (utgivergrupper, HDR, lyd) synkroniseres best med [Recyclarr](https://recyclarr.dev) – denne siden rører bare det som styrer filstørrelsen.
+- **Seerr**: velg profilen nye forespørsler får.
+- **Deling**: for at ferdige torrenter skal forsvinne av seg selv, må qBittorrent stoppe en torrent når den har delt nok, og Radarr/Sonarr må ha *Remove completed* på. Begge kan settes her. Med qBittorrent tilkoblet kan ferdige torrenter som allerede ligger i et bibliotek fjernes med de nedlastede filene med en gang. Private trackere kan kreve en minste delingstid – reglene deres går foran.
+- **Sikkerhetskopier**: hver endring lagrer de forrige innstillingene først; gjenopprett med ett klikk.
+
+Endringer her krever *Tillat endringer via Radarr, Sonarr, Plex, Seerr og qBittorrent* under Innstillinger → Sletting.
+
 ### Slå på sletting
 
 Under **Innstillinger → Sletting**:
 
-- **Tillat endringer gjennom Radarr, Sonarr og Plex** – slett filmer, serier og sesonger, bytt til mindre versjoner og fjern Plex-oppføringer uten filer.
+- **Tillat endringer via Radarr, Sonarr, Plex, Seerr og qBittorrent** – slett filmer, serier og sesonger, bytt til mindre versjoner, fjern Plex-oppføringer uten filer og bruk nedlastingsregler.
 - **Tillat sletting av filer på disk** – overflødige duplikater, nedlastinger og foreldreløse mapper. Fjern også `:ro` på de aktuelle mappene (Apps → mediacleanup → Edit). Seksjonen viser skrivetilgang per mappe.
 
 Duplikater Radarr/Sonarr kjenner, slettes gjennom dem, etterfulgt av en ny skanning slik at de bruker filen du beholder (den må ligge i samme mappe). Beskyttelse gjelder hele titler; duplikater i beskyttede biblioteker kan fortsatt ryddes med mindre du slår på *Beskyttelse gjelder også duplikater*.
@@ -222,6 +242,7 @@ Innstillingene lagres i `/data/settings.json` og redigeres i appen. Miljøvariab
 | `SMC_TAUTULLI_URL`, `SMC_TAUTULLI_API_KEY` | Tautulli |
 | `SMC_SEERR_URL`, `SMC_SEERR_API_KEY` | Seerr/Overseerr |
 | `SMC_TRUENAS_URL`, `SMC_TRUENAS_API_KEY` | TrueNAS (kun lesing) |
+| `SMC_QBITTORRENT_URL`, `SMC_QBITTORRENT_USERNAME`, `SMC_QBITTORRENT_PASSWORD` | qBittorrent |
 | `SMC_USERNAME`, `SMC_PASSWORD` | Slår på innlogging (basic auth) for webgrensesnittet |
 | `SMC_LOG_LEVEL` | `INFO` (standard) eller `DEBUG` |
 | `TZ` | Tidssone |
@@ -289,6 +310,8 @@ En periodisk snapshot-oppgave på appens datasett er et godt tillegg. Appen selv
 | Sletteknappene sier at bryteren er av | Slå den på under Innstillinger → Sletting. Filer på disk krever også at `:ro` fjernes. |
 | «Slett 0 filer» / «montert skrivebeskyttet» | Mappen er montert `:ro`. Fjern `:ro` under Edit på appen. |
 | Et bytte sier «Trenger hjelp» | Radarr/Sonarr hadde innvendinger mot filen. Den gamle filen er urørt. Les meldingen, og importer eller fjern nedlastingen under Activity → Queue i Radarr/Sonarr. |
+| Sonarr-synk sier «Ikke funnet: /api/v3/episodefile (404)» | Rettet i 1.1: appen leser filene på en annen måte og hopper over serier Sonarr ikke lenger kjenner. Feiler alle serier, sjekk Sonarr-adressen (inkludert eventuell URL-base). |
+| qBittorrent «avviste brukernavn eller passord» | Sjekk Web UI-brukeren. Etter flere mislykkede forsøk utestenger qBittorrent IP-en en stund. |
 | Plex nekter å fjerne oppføringer | Slå på «Allow media deletion» i Plex → Settings → Library. |
 | Update-knappen i TrueNAS er grå | TrueNAS har ikke sjekket ennå (én gang i døgnet). Kjør `midclt -t 600 call app.image.op.check_update`. |
 
@@ -302,4 +325,5 @@ Logger: Apps → mediacleanup → Logs. Feilede jobber viser hele feilen under A
 - Mapper med uendret mtime stat-es ikke av den inkrementelle skanningen. Filer endret på stedet uten at mappen endres, fanges av den ukentlige fulle skanningen.
 - Plex-etiketter beskytter filmer og serier, ikke enkeltepisoder.
 - Titler som verken er i Radarr eller Sonarr kan ikke slettes som helhet fra appen, bortsett fra som mapper på disk under Plex-avvik.
-- Torrenter i nedlastingsklienten fjernes ikke av appen.
+- Bare qBittorrent støttes for opprydding i deling. Torrenter fjernes bare når de er ferdige og innholdet finnes i et skannet bibliotek.
+- Nedlastingsregler synkroniserer ikke TRaSH sitt fulle sett med custom formats; bruk Recyclarr eller Notifiarr til det.

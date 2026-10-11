@@ -5,7 +5,7 @@ import { t } from "../i18n";
 import { ErrorNote, Loading, PageHeader, useFetch, useRefreshTick, useStatus } from "../components/common";
 import { SetupStatus } from "../components/SetupCard";
 
-type Svc = { enabled: boolean; url: string; api_key?: string; token?: string; verify_tls?: boolean; dataset?: string };
+type Svc = { enabled: boolean; url: string; api_key?: string; token?: string; password?: string; username?: string; verify_tls?: boolean; dataset?: string };
 type Lib = { name: string; host_path: string; container_path: string; kind: string; protected: boolean };
 type S = {
   services: Record<string, Svc>;
@@ -66,13 +66,14 @@ export default function SettingsPage({ section, onSaved }: { section: string; on
     try { await api.post("/api/setup/detect-libraries"); reload(); setup.reload(); } catch (e) { setSaveErr(String((e as Error).message)); }
   };
   const list = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
-  const svcMeta: Record<string, { name: string; secret: "api_key" | "token"; hint: string; placeholder: string }> = {
+  const svcMeta: Record<string, { name: string; secret: "api_key" | "token" | "password"; hint: string; placeholder: string }> = {
     radarr: { name: "Radarr", secret: "api_key", hint: "Settings → General → API Key", placeholder: "http://<nas-ip>:30025" },
     sonarr: { name: "Sonarr", secret: "api_key", hint: "Settings → General → API Key", placeholder: "http://<nas-ip>:30027" },
     plex: { name: "Plex", secret: "token", hint: t("X-Plex-Token from «Get Info → View XML» on an item", "X-Plex-Token fra «Get Info → View XML» på et element"), placeholder: "http://<nas-ip>:32400" },
     tautulli: { name: "Tautulli", secret: "api_key", hint: "Settings → Web Interface → API key", placeholder: "http://<nas-ip>:30047" },
     seerr: { name: t("Seerr (optional)", "Seerr (valgfritt)"), secret: "api_key", hint: t("Settings → General → API Key. Shows who requested what.", "Settings → General → API Key. Viser hvem som ba om hva."), placeholder: "http://<nas-ip>:30357" },
     truenas: { name: t("TrueNAS (optional)", "TrueNAS (valgfritt)"), secret: "api_key", hint: t("API key for a user with the Read-Only Admin role. Gives pool capacity, datasets and snapshots.", "API-nøkkel for en bruker med rollen Read-Only Admin. Gir pool-kapasitet, datasett og snapshots."), placeholder: "https://<nas-ip>" },
+    qbittorrent: { name: t("qBittorrent (optional)", "qBittorrent (valgfritt)"), secret: "password", hint: t("The Web UI user. Shows which torrents still seed, and lets you stop or remove them under Download rules.", "Brukeren til Web UI. Viser hvilke torrenter som fortsatt deler, og lar deg stoppe eller fjerne dem under Nedlastingsregler."), placeholder: "http://<nas-ip>:30024" },
   };
   const weights: Record<string, string> = {
     space: t("Space freed", "Plass som frigjøres"), staleness: t("Time since last watched", "Tid siden sist sett"),
@@ -108,9 +109,12 @@ export default function SettingsPage({ section, onSaved }: { section: string; on
                 <label className="field"><span>{t("Address", "Adresse")}{locked(`services.${name}.url`) && t(" (locked by environment variable)", " (låst av miljøvariabel)")}</span>
                   <input type="url" placeholder={meta.placeholder} value={svc.url} disabled={locked(`services.${name}.url`)} onChange={(e) => setSvc(name, "url", e.target.value)} />
                 </label>
-                <label className="field"><span>{meta.secret === "token" ? "Token" : t("API key", "API-nøkkel")}{locked(`services.${name}.${meta.secret}`) && t(" (locked by environment variable)", " (låst av miljøvariabel)")}</span>
+                <label className="field"><span>{meta.secret === "token" ? "Token" : meta.secret === "password" ? t("Password", "Passord") : t("API key", "API-nøkkel")}{locked(`services.${name}.${meta.secret}`) && t(" (locked by environment variable)", " (låst av miljøvariabel)")}</span>
                   <input type="password" autoComplete="off" value={svc[meta.secret] ?? ""} disabled={locked(`services.${name}.${meta.secret}`)} onChange={(e) => setSvc(name, meta.secret, e.target.value)} />
                 </label>
+                {name === "qbittorrent" && (
+                  <label className="field"><span>{t("Username", "Brukernavn")}</span><input type="text" autoComplete="off" value={svc.username ?? ""} disabled={locked("services.qbittorrent.username")} onChange={(e) => setSvc(name, "username", e.target.value)} /></label>
+                )}
                 {name === "truenas" && (
                   <>
                     <label className="field"><span>{t("Pool or root dataset (empty: from the library paths)", "Pool eller rotdatasett (tomt: fra bibliotekstiene)")}</span><input type="text" value={svc.dataset ?? ""} onChange={(e) => setSvc(name, "dataset", e.target.value)} /></label>
@@ -193,10 +197,11 @@ export default function SettingsPage({ section, onSaved }: { section: string; on
       <Section id="deletion">
         <p className="small muted" style={{ maxWidth: 760 }}>{t("The app starts read-only. Nothing is ever deleted automatically – every action is shown in a summary first and needs one confirmation. Everything is logged under Activity → Deletion log.",
           "Appen starter skrivebeskyttet. Ingenting slettes noen gang automatisk – hver handling vises i en oppsummering først og krever én bekreftelse. Alt loggføres under Aktivitet → Slettelogg.")}</p>
-        <label className="check"><input type="checkbox" checked={!!s.actions?.enabled} onChange={(e) => setS({ ...s, actions: { ...s.actions, enabled: e.target.checked } })} /><b>{t("Allow changes through Radarr, Sonarr and Plex", "Tillat endringer via Radarr, Sonarr og Plex")}</b></label>
+        <label className="check"><input type="checkbox" checked={!!s.actions?.enabled} onChange={(e) => setS({ ...s, actions: { ...s.actions, enabled: e.target.checked } })} /><b>{t("Allow changes through Radarr, Sonarr, Plex, Seerr and qBittorrent", "Tillat endringer via Radarr, Sonarr, Plex, Seerr og qBittorrent")}</b></label>
         <ul className="conseq small muted" style={{ maxWidth: 760 }}>
           <li>{t("Movies are deleted in Radarr and series in Sonarr, with their files. No import exclusion is added.", "Filmer slettes i Radarr og serier i Sonarr, med filene. Ingen importekskludering legges til.")}</li>
           <li>{t("Single seasons are unmonitored in Sonarr before the episode files are deleted, so they are not downloaded again.", "Enkeltsesonger avovervåkes i Sonarr før episodefilene slettes, så de ikke lastes ned igjen.")}</li>
+          <li>{t("Download rules: size limits, quality profiles, Seerr's default profile and seeding limits are changed only when you confirm, and a backup is saved first so they can be restored.", "Nedlastingsregler: størrelsesgrenser, kvalitetsprofiler, Seerrs standardprofil og delingsgrenser endres bare når du bekrefter, og en sikkerhetskopi lagres først så de kan gjenopprettes.")}</li>
           <li>{t("«Swap» to a smaller version downloads first. The old file is only deleted through Radarr/Sonarr once the new one is finished and can be imported.", "«Bytt» til en mindre versjon laster ned først. Den gamle filen slettes via Radarr/Sonarr først når den nye er ferdig og kan importeres.")}</li>
           <li>{t("Plex entries whose files are missing on disk can be removed from Plex (requires «Allow media deletion» in Plex).", "Plex-oppføringer der filene mangler på disk kan fjernes fra Plex (krever «Allow media deletion» i Plex).")}</li>
           <li>{t("Protected titles can never be deleted or swapped.", "Beskyttede titler kan aldri slettes eller byttes.")}</li>

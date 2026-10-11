@@ -96,7 +96,7 @@ export function SwitchedOff({ what, onClose }: { what: "services" | "files"; onC
   return (
     <div className="notice">
       {what === "services"
-        ? t("Changes through Radarr, Sonarr and Plex are switched off.", "Endringer via Radarr, Sonarr og Plex er slått av.")
+        ? t("Changes through Radarr, Sonarr, Plex, Seerr and qBittorrent are switched off.", "Endringer via Radarr, Sonarr, Plex, Seerr og qBittorrent er slått av.")
         : t("Deleting files on disk is switched off.", "Sletting av filer på disk er slått av.")}{" "}
       <a href="#/settings/deletion" onClick={onClose}>{t("Switch it on under Settings → Deletion", "Slå det på under Innstillinger → Sletting")}</a>
       {what === "files" && <>{" "}{t("and remove :ro from the folder in the app's compose file.", "og fjern :ro på mappen i appens compose-fil.")}</>}

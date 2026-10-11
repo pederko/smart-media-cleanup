@@ -23,12 +23,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import (actions, db, downloads, dupes, jobs, plexcheck, posters, quality, releases, settings, setup, swaps, sync,
+from . import (actions, arrsetup, db, downloads, dupes, jobs, plexcheck, posters, quality, releases, settings, setup, swaps, sync,
                updates, views)
 from .analysis import engine
 from .i18n import L, AppError, LocalizedJSONResponse, lang_var, localize, parse_lang, text
 
-VERSION = os.environ.get("SMC_VERSION", "1.0.0")
+VERSION = os.environ.get("SMC_VERSION", "1.1.0")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 NO_SCHEDULER = os.environ.get("SMC_DISABLE_SCHEDULER") == "1"
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
@@ -663,6 +663,41 @@ def quality_profiles(service: str):
     if service not in ("radarr", "sonarr"):
         _not_found("Service", "tjenesten")
     return {"items": swaps.quality_profiles(service)}
+
+
+# ------------------------------------------------------------ download rules (Radarr/Sonarr/Seerr/qBittorrent setup)
+@app.get("/api/arr-setup")
+def arr_setup():
+    return arrsetup.overview()
+
+
+class ChangesRequest(BaseModel):
+    changes: list[dict]
+    token: str | None = None
+
+
+@app.post("/api/arr-setup/plan")
+def arr_setup_plan(req: ChangesRequest):
+    return arrsetup.public(arrsetup.plan(req.changes))
+
+
+@app.post("/api/arr-setup/execute")
+def arr_setup_execute(req: ChangesRequest):
+    return arrsetup.execute(req.changes, req.token or "")
+
+
+@app.get("/api/arr-setup/backups")
+def arr_setup_backups():
+    return {"items": arrsetup.backups()}
+
+
+class BackupRequest(BaseModel):
+    name: str
+
+
+@app.post("/api/arr-setup/restore")
+def arr_setup_restore(req: BackupRequest):
+    return arrsetup.restore(req.name)
 
 
 # ------------------------------------------------------------ Plex differences and other storage

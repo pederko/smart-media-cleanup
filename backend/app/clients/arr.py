@@ -53,7 +53,7 @@ def fetch_sonarr(cfg: dict, map_path: Callable[[str | None], str | None],
                  progress: Callable[[float, str], None] | None = None) -> tuple[list[tuple], list[tuple]]:
     base, h = _cfg(cfg)
     tags = _tag_names(base, h)
-    series_rows, file_rows = [], []
+    series_rows, file_rows, skipped = [], [], []
     series = get_json(f"{base}/api/v3/series", headers=h)
     for i, s in enumerate(series):
         seasons = {str(x["seasonNumber"]): bool(x.get("monitored")) for x in s.get("seasons", [])}
@@ -63,13 +63,47 @@ def fetch_sonarr(cfg: dict, map_path: Callable[[str | None], str | None],
             json.dumps([tags.get(t, str(t)) for t in s.get("tags", [])]),
             json.dumps(seasons), s.get("status"),
         ))
-        for f in get_json(f"{base}/api/v3/episodefile", params={"seriesId": s["id"]}, headers=h):
+        files = episode_files(base, h, s["id"])
+        if files is None:
+            skipped.append(s.get("title") or str(s["id"]))
+            continue
+        for f in files:
             qname, res, codec = _quality(f)
             file_rows.append((f["id"], s["id"], f.get("seasonNumber"), map_path(f.get("path")),
                               f.get("size"), qname, res, codec, ts(f.get("dateAdded"))))
         if progress and i % 10 == 0:
-            progress(i / max(1, len(series)), f"Sonarr: {i}/{len(series)} serier")
-    return series_rows, file_rows
+            progress(i / max(1, len(series)), f"Sonarr: {i}/{len(series)}")
+    if series and len(skipped) == len(series):
+        raise ServiceError(L("Sonarr did not return episode files for any series (404). Check the Sonarr version and URL base.",
+                             "Sonarr ga ikke episodefiler for noen serier (404). Sjekk Sonarr-versjonen og URL-basen."))
+    return series_rows, file_rows, skipped
+
+
+def episode_files(base: str, h: dict, series_id: int) -> list[dict] | None:
+    """Episode files for one series.
+
+    Normally /episodefile?seriesId=. Some Sonarr setups answer 404 there (seen in the wild); then the
+    files are read from /episode?includeEpisodeFile=true instead. None means Sonarr knows no such series
+    (e.g. deleted while syncing) – the caller skips it rather than failing the whole sync.
+    """
+    try:
+        return get_json(f"{base}/api/v3/episodefile", params={"seriesId": series_id}, headers=h)
+    except ServiceError as e:
+        if getattr(e, "code", None) != 404:
+            raise
+    try:
+        episodes = get_json(f"{base}/api/v3/episode", params={"seriesId": series_id, "includeEpisodeFile": "true"}, headers=h)
+    except ServiceError as e:
+        if getattr(e, "code", None) == 404:
+            return None
+        raise
+    files: dict[int, dict] = {}
+    for ep in episodes:
+        ef = ep.get("episodeFile")
+        if ef and ef.get("id"):
+            ef.setdefault("seasonNumber", ep.get("seasonNumber"))
+            files[ef["id"]] = ef
+    return list(files.values())
 
 
 def root_folders(cfg: dict) -> list[str]:

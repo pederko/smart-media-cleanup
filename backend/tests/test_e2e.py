@@ -64,12 +64,15 @@ def env(tmp_path_factory):
     os.utime(media / "downloads/Old.Download/old.mkv", (old, old))
 
     base = f"http://127.0.0.1:{port}"
+    ms.QBIT_PORT["port"] = port
+    ms.reset_arr_state()
     s = settings.get()
     s["services"]["radarr"].update(url=f"{base}/radarr", api_key=ms.KEY)
     s["services"]["sonarr"].update(url=f"{base}/sonarr", api_key=ms.KEY)
     s["services"]["plex"].update(url=f"{base}/plex", token=ms.TOKEN)
     s["services"]["tautulli"].update(url=f"{base}/tautulli", api_key=ms.KEY)
     s["services"]["seerr"].update(url=f"{base}/seerr", api_key=ms.KEY, enabled=True)
+    s["services"]["qbittorrent"].update(url=f"{base}/qbit", username="admin", password="secret", enabled=True)
     s["libraries"] = [
         {"name": "Movies", "host_path": "/mnt/tank/media/Movies", "kind": "movies", "protected": False},
         {"name": "TV", "host_path": "/mnt/tank/media/TV", "kind": "series", "protected": False},
@@ -119,6 +122,7 @@ def test_sync_all_services_ok(env):
     for name in ("radarr", "sonarr", "plex", "tautulli", "seerr"):
         assert not env["sync"][name].startswith("error"), env["sync"]
     assert env["sync"]["truenas"] == "not configured"
+    assert env["sync"]["qbittorrent"].startswith("4 torrents"), env["sync"]
 
 
 def test_big_unwatched_movie_is_top_low_risk(env):
@@ -834,3 +838,169 @@ def test_legacy_status_values_are_migrated(client):
         assert c.execute("SELECT status FROM actions WHERE id=?", (aid,)).fetchone()[0] == "done"
         c.execute("DELETE FROM swaps WHERE id=?", (sid,))
         c.execute("DELETE FROM actions WHERE id=?", (aid,))
+
+
+def test_sonarr_episodefile_404_falls_back_and_skips(env):
+    """Some Sonarr setups answer 404 on /episodefile?seriesId=; one missing series must not fail the sync."""
+    from app.clients import arr
+    from app.i18n import text
+    cfg = settings.get()["services"]["sonarr"]
+    ms.EPISODEFILE_404.add(2)
+    ms.GONE_SERIES.add(1)
+    try:
+        series, files, skipped = arr.fetch_sonarr(cfg, lambda p: p)
+        assert skipped == ["Old Show"]
+        assert sorted(f[0] for f in files) == [21, 22]           # read through /episode?includeEpisodeFile=true
+        assert {f[2] for f in files} == {1}                      # season number kept
+        ms.GONE_SERIES.add(2)
+        with pytest.raises(arr.ServiceError):
+            arr.fetch_sonarr(cfg, lambda p: p)
+        assert arr.episode_files(cfg["url"], {"X-Api-Key": ms.KEY}, 2) is None
+        with pytest.raises(arr.ServiceError) as e:  # the error carries the service's own explanation
+            arr.get_json(f"{cfg['url']}/api/v3/episodefile", params={"seriesId": 2}, headers={"X-Api-Key": ms.KEY})
+        assert "does not exist" in text(e.value.msg, "en")
+    finally:
+        ms.EPISODEFILE_404.clear()
+        ms.GONE_SERIES.clear()
+
+
+# ------------------------------------------------------------------ download rules
+
+def _arr_setup(client):
+    r = client.get("/api/arr-setup")
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_arr_setup_overview(client):
+    ms.reset_arr_state()
+    d = _arr_setup(client)
+    radarr = d["services"]["radarr"]
+    prof = {p["name"]: p for p in radarr["profiles"]}
+    assert prof["Any"]["count"] == 1 and prof["HD-1080p"]["count"] == 6
+    kinds = {f["id"].split(":", 2)[2] for f in prof["Any"]["findings"]}
+    assert {"remux", "disc", "cf:1", "unlimited"} <= kinds
+    assert not any(f["id"].endswith(":remux") for f in prof["HD-1080p"]["findings"])
+    assert prof["HD-1080p"]["allowed"][0] == "Bluray-1080p" and prof["HD-1080p"]["cutoff"] == "Bluray-1080p"
+    remux = next(x for x in radarr["definitions"] if x["name"] == "Remux-2160p")
+    assert remux["max"] is None and remux["presets"]["balanced"] == [187.4, 500, 600]
+    # the 80 GB remux runs at ~680 MB/min – above the balanced ceiling
+    assert any(r[0] > 600 for r in radarr["files"]["Bluray-2160p"])
+    assert [r["key"] for r in radarr["recipes"]] == ["hd", "web", "uhd"]
+    client_ = radarr["seeding"]["clients"][0]
+    assert client_["remove_completed"] is False and client_["finding"]["change"]["op"] == "remove_completed"
+    assert radarr["seeding"]["indexers"][0]["prowlarr"] is True
+    # Seerr: same Radarr instance (profile names match), default «Any» allows remuxes
+    seerr = {s["kind"]: s for s in d["seerr"]["servers"]}
+    assert seerr["radarr"]["same_instance"] and seerr["radarr"]["slots"][0]["allows_remux"]
+    assert 4 in seerr["radarr"]["slots"][0]["finding"]["alternatives"]
+    assert [s["field"] for s in seerr["sonarr"]["slots"]] == ["activeProfileId", "activeAnimeProfileId"]
+    # qBittorrent: only Radarr/Sonarr categories; imported ones can be removed
+    q = d["qbit"]
+    t = {x["hash"]: x for x in q["torrents"]}
+    assert set(t) == {"aaa", "bbb", "ccc"}
+    assert t["aaa"]["import_status"] == "hardlinked" and t["aaa"]["removable"]
+    assert t["bbb"]["import_status"] == "copied" and t["bbb"]["removable"]
+    assert t["ccc"]["import_status"] == "not_imported" and not t["ccc"]["removable"]
+    assert q["finding"]["change"]["op"] == "qbit_prefs"
+    assert q["url_hint"].endswith("/qbit")
+
+
+def _changes(d):
+    radarr = d["services"]["radarr"]
+    defs = {x["name"]: x["presets"]["balanced"] for x in radarr["definitions"] if "balanced" in x["presets"]}
+    return [
+        {"op": "definitions", "service": "radarr", "values": defs},
+        {"op": "disallow", "service": "radarr", "profile": 1, "qualities": ["Remux-1080p", "Remux-2160p", "BR-DISK", "Raw-HD"]},
+        {"op": "cf_score", "service": "radarr", "profile": 1, "format": 1, "score": 0},
+        {"op": "create_profile", "service": "radarr", "recipe": "uhd", "base": 1},
+        {"op": "remove_completed", "service": "radarr", "client": 1},
+        {"op": "seerr_profile", "kind": "radarr", "server": 0, "field": "activeProfileId", "profile": 4, "name": "HD-1080p"},
+        {"op": "qbit_prefs", "ratio": 1.0, "minutes": 1440},
+        {"op": "qbit_limits", "hashes": ["aaa"]},
+        {"op": "qbit_remove", "hashes": ["bbb", "ccc"]},
+    ]
+
+
+def test_arr_setup_changes_need_switch_and_token(client, no_refresh):
+    ms.reset_arr_state()
+    _enable(client, False)
+    changes = _changes(_arr_setup(client))
+    p = client.post("/api/arr-setup/plan", json={"changes": changes}).json()
+    assert p["enabled"] is False and not p["errors"]
+    assert client.post("/api/arr-setup/execute", json={"changes": changes, "token": p["token"]}).status_code == 403
+    _enable(client, True)
+    try:
+        # something changes in Radarr after the summary -> refused
+        ms.ARR_STATE["radarr"]["profiles"][4]["upgradeAllowed"] = False
+        r = client.post("/api/arr-setup/execute", json={"changes": changes, "token": p["token"]})
+        assert r.status_code == 409
+    finally:
+        _enable(client, False)
+
+
+def test_arr_setup_apply_and_restore(client, no_refresh):
+    import os as _os
+    ms.reset_arr_state()
+    ms.WRITES.clear()
+    _enable(client, True)
+    try:
+        changes = _changes(_arr_setup(client))
+        p = client.post("/api/arr-setup/plan", json={"changes": changes}).json()
+        assert not p["errors"], p["errors"]
+        whats = " | ".join(r["what"] for r in p["rows"])
+        assert "Remux" in whats and "UHD Bluray + WEB" in whats and "Etterspurt" not in whats
+        skipped = [r for r in p["rows"] if r.get("skipped")]
+        assert len(skipped) == 1 and "Old.Download" in skipped[0]["what"]
+        r = client.post("/api/arr-setup/execute", json={"changes": changes, "token": p["token"]}).json()
+        assert r["failed"] == 0, r
+        st = ms.ARR_STATE["radarr"]
+        remux = next(x for x in st["definitions"] if x["quality"]["name"] == "Remux-2160p")
+        assert remux["maxSize"] == 600 and remux["preferredSize"] == 500
+        any_ = st["profiles"][1]
+        from app.arrsetup import allowed_qualities, cutoff_name
+        assert not set(allowed_qualities(any_)) & {"Remux-1080p", "Remux-2160p", "BR-DISK", "Raw-HD"}
+        assert cutoff_name(any_) == "HDTV-720p"  # unchanged – still allowed
+        assert next(f for f in any_["formatItems"] if f["format"] == 1)["score"] == 0
+        new = next(p_ for p_ in st["profiles"].values() if p_["name"] == "UHD Bluray + WEB")
+        assert sorted(allowed_qualities(new)) == ["Bluray-2160p", "WEBDL-2160p", "WEBRip-2160p"] and cutoff_name(new) == "Bluray-2160p"
+        assert next(f for f in new["formatItems"] if f["format"] == 2)["score"] == -10000  # carried over from the base
+        assert st["clients"][1]["removeCompletedDownloads"] is True
+        assert ms.SEERR_SERVERS["radarr"][0]["activeProfileId"] == 4
+        assert ms.SEERR_SERVERS["radarr"][0]["activeProfileName"] == "HD-1080p"
+        assert ms.QBIT["prefs"]["max_ratio_enabled"] and ms.QBIT["prefs"]["max_seeding_time"] == 1440
+        assert ms.QBIT["torrents"]["aaa"]["ratio_limit"] == -2
+        assert "bbb" not in ms.QBIT["torrents"] and "ccc" in ms.QBIT["torrents"]
+        delete = next(x for x in ms.QBIT["log"] if x[0] == "delete")
+        assert delete[1]["deleteFiles"] == "true" and delete[1]["hashes"] == "bbb"
+        assert no_refresh == ["refresh"]
+        # backup kept, with mode 600 (it contains Seerr's copy of the Radarr key)
+        name = r["backup"]
+        path = settings.DATA_DIR / "backups" / name
+        assert oct(_os.stat(path).st_mode & 0o777) == "0o600"
+        assert any(b["name"] == name for b in client.get("/api/arr-setup/backups").json()["items"])
+        log = client.get("/api/actions/history").json()
+        assert any(x["action"] == "arr_setup" and "UHD Bluray + WEB" in x["detail"] for x in log["items"])
+        # restore puts everything back and deletes the created profile
+        rr = client.post("/api/arr-setup/restore", json={"name": name}).json()
+        assert rr["failed"] == 0, rr
+        assert next(x for x in st["definitions"] if x["quality"]["name"] == "Remux-2160p")["maxSize"] is None
+        assert "Remux-2160p" in allowed_qualities(st["profiles"][1])
+        assert all(p_["name"] != "UHD Bluray + WEB" for p_ in st["profiles"].values())
+        assert st["clients"][1]["removeCompletedDownloads"] is False
+        assert ms.SEERR_SERVERS["radarr"][0]["activeProfileId"] == 1
+        assert ms.QBIT["prefs"]["max_ratio_enabled"] is False
+        assert client.post("/api/arr-setup/restore", json={"name": "../settings.json"}).status_code == 400
+    finally:
+        _enable(client, False)
+        ms.reset_arr_state()
+
+
+def test_disallow_splits_mixed_groups():
+    from app.arrsetup import allowed_qualities, cutoff_name, disallow
+    p = ms._profiles("radarr")[1]
+    p["cutoff"] = 1003  # WEB 2160p group
+    done = disallow(p, {"WEBRip-2160p", "Remux-2160p"})
+    assert set(done) == {"WEBRip-2160p", "Remux-2160p"}
+    assert "WEBDL-2160p" in allowed_qualities(p) and "WEBRip-2160p" not in allowed_qualities(p)
+    assert cutoff_name(p) == "WEB 2160p"

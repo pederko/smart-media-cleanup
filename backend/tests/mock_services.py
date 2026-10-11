@@ -99,7 +99,7 @@ def r_movies(x_api_key: str = Header(None)):
     for mid, title, year, folder, fname, mon, added, res, _ in MOVIES:
         out.append({"id": mid, "title": title, "year": year, "tmdbId": 1000 + mid, "path": folder,
                     "monitored": mon, "added": iso(added), "tags": [1] if title == "Keeper" else [],
-                    "hasFile": True,
+                    "hasFile": True, "qualityProfileId": 1 if mid == 1 else 4, "runtime": 120, "sizeOnDisk": SIZES[mid],
                     "movieFile": {"path": f"{folder}/{fname}", "size": SIZES[mid], "dateAdded": iso(added),
                                   "quality": _qual(res), "mediaInfo": {"videoCodec": "x265"}}})
     return out
@@ -109,18 +109,47 @@ def r_movies(x_api_key: str = Header(None)):
 def s_series(x_api_key: str = Header(None)):
     _check(x_api_key)
     return [{"id": sid, "title": t, "year": y, "tvdbId": 2000 + sid, "path": p, "monitored": mon,
-             "added": iso(a), "tags": [], "status": "ended",
+             "added": iso(a), "tags": [], "status": "ended", "qualityProfileId": 4, "runtime": 45,
              "seasons": [{"seasonNumber": n, "monitored": m} for n, m in seasons.items()]}
             for sid, t, y, p, mon, a, seasons, _ in SERIES]
+
+
+# Series ids for which /episodefile answers 404 (seen on some real Sonarr setups), and ids that
+# Sonarr no longer knows at all (deleted while the sync ran)
+EPISODEFILE_404: set = set()
+GONE_SERIES: set = set()
+
+
+def _ep_files(series_id):
+    folder = {s[0]: s[3] for s in SERIES}[series_id]
+    return [{"id": eid, "seriesId": sid, "seasonNumber": sn, "path": f"{folder}/{fn}", "size": size,
+             "dateAdded": iso(NOW - 900 * DAY), "quality": _qual(1080), "mediaInfo": {"videoCodec": "h264"}}
+            for eid, sid, sn, ep, fn, size in EPISODES if sid == series_id]
 
 
 @app.get("/sonarr/api/v3/episodefile")
 def s_files(seriesId: int, x_api_key: str = Header(None)):
     _check(x_api_key)
-    folder = {s[0]: s[3] for s in SERIES}[seriesId]
-    return [{"id": eid, "seriesId": sid, "seasonNumber": sn, "path": f"{folder}/{fn}", "size": size,
-             "dateAdded": iso(NOW - 900 * DAY), "quality": _qual(1080), "mediaInfo": {"videoCodec": "h264"}}
-            for eid, sid, sn, ep, fn, size in EPISODES if sid == seriesId]
+    if seriesId in EPISODEFILE_404 or seriesId in GONE_SERIES:
+        raise HTTPException(404, detail=f"Series with ID {seriesId} does not exist")
+    return _ep_files(seriesId)
+
+
+@app.get("/sonarr/api/v3/episode")
+def s_episodes(seriesId: int, includeEpisodeFile: bool = False, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    if seriesId in GONE_SERIES:
+        raise HTTPException(404, detail=f"Series with ID {seriesId} does not exist")
+    files = {f["id"]: f for f in _ep_files(seriesId)}
+    out = []
+    for eid, sid, sn, ep, fn, size in EPISODES:
+        if sid == seriesId:
+            e = {"id": 1000 + eid, "seriesId": sid, "seasonNumber": sn, "episodeNumber": ep, "episodeFileId": eid,
+                 "hasFile": True}
+            if includeEpisodeFile:
+                e["episodeFile"] = {k: v for k, v in files[eid].items() if k != "seasonNumber"}
+            out.append(e)
+    return out
 
 
 def _plex_auth(token):
@@ -300,11 +329,6 @@ def arr_manual(downloadId: str, x_api_key: str = Header(None)):
     return MANUAL
 
 
-@app.get("/radarr/api/v3/qualityprofile")
-@app.get("/sonarr/api/v3/qualityprofile")
-def arr_profiles(x_api_key: str = Header(None)):
-    _check(x_api_key)
-    return [{"id": 1, "name": "Any"}, {"id": 4, "name": "HD-1080p"}]
 
 
 @app.delete("/radarr/api/v3/movie/{mid}")
@@ -440,3 +464,279 @@ def t_api(apikey: str, cmd: str, start: int = 0, length: int = 25):
         page = rows[start:start + length]
         return {"response": {"result": "success", "data": {"recordsFiltered": len(rows), "data": page}}}
     return {"response": {"result": "error", "message": "unknown"}}
+
+
+# ---- download rules: quality definitions and profiles, download clients, indexers, Seerr settings, qBittorrent
+import copy as _copy
+import json as _json
+from urllib.parse import parse_qs as _parse_qs
+
+
+def _q(qid, name):
+    return {"quality": {"id": qid, "name": name, "source": "x", "resolution": 0, "modifier": "none"}, "items": [], "allowed": False}
+
+
+def _g(gid, name, kids):
+    return {"name": name, "items": kids, "allowed": False, "id": gid}
+
+
+def _items(svc):
+    remux1, remux2 = ("Remux-1080p", "Remux-2160p") if svc == "radarr" else ("Bluray-1080p Remux", "Bluray-2160p Remux")
+    items = [_q(1, "SDTV"), _q(4, "HDTV-720p"), _g(1001, "WEB 720p", [_q(5, "WEBDL-720p"), _q(14, "WEBRip-720p")]),
+             _q(6, "Bluray-720p"), _q(9, "HDTV-1080p"), _g(1002, "WEB 1080p", [_q(3, "WEBDL-1080p"), _q(15, "WEBRip-1080p")]),
+             _q(7, "Bluray-1080p"), _q(30, remux1), _q(16, "HDTV-2160p"),
+             _g(1003, "WEB 2160p", [_q(18, "WEBDL-2160p"), _q(17, "WEBRip-2160p")]), _q(19, "Bluray-2160p"), _q(31, remux2),
+             _q(10, "Raw-HD")]
+    if svc == "radarr":
+        items.append(_q(22, "BR-DISK"))
+    return items
+
+
+def _flat(items):
+    for it in items:
+        if it["items"]:
+            yield from it["items"]
+        else:
+            yield it
+
+
+def _profiles(svc):
+    any_ = {"id": 1, "name": "Any", "upgradeAllowed": True, "cutoff": 4, "items": _items(svc), "minFormatScore": 0,
+            "cutoffFormatScore": 0, "formatItems": [{"format": 1, "name": "TrueHD ATMOS", "score": 100},
+                                                     {"format": 2, "name": "x265 (HD)", "score": -10000}],
+            "language": {"id": 1, "name": "English"}}
+    for it in any_["items"]:
+        it["allowed"] = True
+        for k in it["items"]:
+            k["allowed"] = True
+    hd = {"id": 4, "name": "HD-1080p", "upgradeAllowed": True, "cutoff": 7, "items": _items(svc), "minFormatScore": 0,
+          "cutoffFormatScore": 0, "formatItems": [{"format": 1, "name": "TrueHD ATMOS", "score": 0}],
+          "language": {"id": 1, "name": "English"}}
+    for it in hd["items"]:
+        names = [k["quality"]["name"] for k in it["items"]] or [it["quality"]["name"]]
+        if any(n in ("HDTV-1080p", "WEBDL-1080p", "WEBRip-1080p", "Bluray-1080p") for n in names):
+            it["allowed"] = True
+            for k in it["items"]:
+                k["allowed"] = True
+    return {1: any_, 4: hd}
+
+
+ARR_STATE: dict = {}
+QBIT_PORT = {"port": 0}
+
+
+def reset_arr_state():
+    ARR_STATE.clear()
+    for svc in ("radarr", "sonarr"):
+        defs = [{"id": i + 1, "quality": it["quality"], "title": it["quality"]["name"], "weight": i + 1,
+                 "minSize": 0, "maxSize": None, "preferredSize": 95 if svc == "sonarr" else 1999}
+                for i, it in enumerate(_flat(_items(svc)))]
+        cat_field = "movieCategory" if svc == "radarr" else "tvCategory"
+        ARR_STATE[svc] = {
+            "definitions": defs, "profiles": _profiles(svc), "next_id": 10,
+            "clients": {1: {"id": 1, "name": "qBittorrent", "implementation": "QBittorrent", "protocol": "torrent", "enable": True,
+                            "removeCompletedDownloads": False, "removeFailedDownloads": True,
+                            "fields": [{"name": "host", "value": "127.0.0.1"}, {"name": "port", "value": QBIT_PORT["port"]},
+                                       {"name": "useSsl", "value": False}, {"name": "urlBase", "value": "/qbit"},
+                                       {"name": cat_field, "value": svc}, {"name": "password", "value": "********"}]}},
+            "indexers": [{"id": 1, "name": "Tracker (Prowlarr)", "protocol": "torrent", "enableRss": True,
+                          "fields": [{"name": "seedCriteria.seedRatio", "value": None},
+                                     {"name": "seedCriteria.seedTime", "value": None}]}],
+        }
+    SEERR_SERVERS.clear()
+    SEERR_SERVERS.update({
+        "radarr": {0: {"id": 0, "name": "Radarr", "hostname": "radarr", "port": 7878, "apiKey": KEY, "useSsl": False,
+                       "baseUrl": "", "activeProfileId": 1, "activeProfileName": "Any", "activeDirectory": "/Movies",
+                       "is4k": False, "minimumAvailability": "released", "isDefault": True}},
+        "sonarr": {0: {"id": 0, "name": "Sonarr", "hostname": "sonarr", "port": 8989, "apiKey": KEY, "useSsl": False,
+                       "baseUrl": "", "activeProfileId": 4, "activeProfileName": "HD-1080p", "activeDirectory": "/TV",
+                       "activeAnimeProfileId": 1, "activeAnimeProfileName": "Any",
+                       "is4k": False, "enableSeasonFolders": True, "isDefault": True}},
+    })
+    QBIT.clear()
+    QBIT.update({
+        "prefs": {"max_ratio_enabled": False, "max_ratio": -1, "max_seeding_time_enabled": False, "max_seeding_time": -1,
+                  "max_ratio_act": 0, "web_ui_port": 8080},
+        "torrents": {
+            "aaa": {"hash": "aaa", "name": "Hardlinked.2011.mkv", "category": "radarr", "state": "stalledUP", "progress": 1,
+                    "ratio": 3.2, "seeding_time": 90000, "ratio_limit": -2, "seeding_time_limit": -2, "size": 20 * GB,
+                    "content_path": "/downloads/Hardlinked.2011.mkv", "added_on": int(NOW - 900 * DAY)},
+            "bbb": {"hash": "bbb", "name": "Copy.2013.mkv", "category": "radarr", "state": "uploading", "progress": 1,
+                    "ratio": 0.4, "seeding_time": 3600, "ratio_limit": -1, "seeding_time_limit": -1, "size": 7 * GB,
+                    "content_path": "/downloads/Copy.2013.mkv", "added_on": int(NOW - 300 * DAY)},
+            "ccc": {"hash": "ccc", "name": "Old.Download", "category": "radarr", "state": "stalledUP", "progress": 1,
+                    "ratio": 0.1, "seeding_time": 7200, "ratio_limit": -2, "seeding_time_limit": -2, "size": 4 * GB,
+                    "content_path": "/downloads/Old.Download", "added_on": int(NOW - 200 * DAY)},
+            "ddd": {"hash": "ddd", "name": "Linux.iso", "category": "other", "state": "uploading", "progress": 1,
+                    "ratio": 9, "seeding_time": 99999, "ratio_limit": -2, "seeding_time_limit": -2, "size": 1 * GB,
+                    "content_path": "/downloads/Linux.iso", "added_on": int(NOW - 10 * DAY)},
+        },
+        "log": [],
+    })
+
+
+SEERR_SERVERS: dict = {}
+QBIT: dict = {}
+
+
+@app.get("/{svc}/api/v3/qualitydefinition")
+def arr_defs(svc: str, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    return ARR_STATE[svc]["definitions"]
+
+
+@app.put("/{svc}/api/v3/qualitydefinition/update")
+async def arr_defs_put(svc: str, request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    body = await request.json()
+    WRITES.append(("PUT", f"/{svc}/api/v3/qualitydefinition/update", {}, body))
+    ARR_STATE[svc]["definitions"] = body
+    return body
+
+
+@app.get("/{svc}/api/v3/qualityprofile")
+def arr_profiles(svc: str, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    return list(ARR_STATE[svc]["profiles"].values())
+
+
+@app.put("/{svc}/api/v3/qualityprofile/{pid}")
+async def arr_profile_put(svc: str, pid: int, request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    body = await request.json()
+    WRITES.append(("PUT", f"/{svc}/api/v3/qualityprofile/{pid}", {}, body))
+    ARR_STATE[svc]["profiles"][pid] = body
+    return body
+
+
+@app.post("/{svc}/api/v3/qualityprofile")
+async def arr_profile_post(svc: str, request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    body = await request.json()
+    st = ARR_STATE[svc]
+    body["id"] = st["next_id"]
+    st["next_id"] += 1
+    st["profiles"][body["id"]] = body
+    WRITES.append(("POST", f"/{svc}/api/v3/qualityprofile", {}, body))
+    return body
+
+
+@app.delete("/{svc}/api/v3/qualityprofile/{pid}")
+def arr_profile_delete(svc: str, pid: int, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    WRITES.append(("DELETE", f"/{svc}/api/v3/qualityprofile/{pid}", {}, None))
+    ARR_STATE[svc]["profiles"].pop(pid, None)
+    return {}
+
+
+@app.get("/{svc}/api/v3/downloadclient")
+def arr_clients(svc: str, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    return list(ARR_STATE[svc]["clients"].values())
+
+
+@app.put("/{svc}/api/v3/downloadclient/{cid}")
+async def arr_client_put(svc: str, cid: int, request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    body = await request.json()
+    WRITES.append(("PUT", f"/{svc}/api/v3/downloadclient/{cid}", {}, body))
+    ARR_STATE[svc]["clients"][cid] = body
+    return body
+
+
+@app.get("/{svc}/api/v3/indexer")
+def arr_indexers(svc: str, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    return ARR_STATE[svc]["indexers"]
+
+
+@app.get("/seerr/api/v1/settings/{kind}")
+def seerr_settings(kind: str, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    return list(SEERR_SERVERS[kind].values())
+
+
+@app.post("/seerr/api/v1/settings/{kind}/test")
+async def seerr_test(kind: str, request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    return {"profiles": [{"id": p["id"], "name": p["name"]} for p in ARR_STATE[kind]["profiles"].values()],
+            "rootFolders": [], "tags": []}
+
+
+@app.put("/seerr/api/v1/settings/{kind}/{sid}")
+async def seerr_put(kind: str, sid: int, request: Request, x_api_key: str = Header(None)):
+    _check(x_api_key)
+    body = await request.json()
+    WRITES.append(("PUT", f"/seerr/api/v1/settings/{kind}/{sid}", {}, body))
+    SEERR_SERVERS[kind][sid] = body
+    return body
+
+
+def _qcheck(request: Request):
+    from fastapi import HTTPException as _H
+    if request.cookies.get("SID") != "qsid":
+        raise _H(403, "Forbidden")
+
+
+async def _form(request: Request) -> dict:
+    return {k: v[0] for k, v in _parse_qs((await request.body()).decode()).items()}
+
+
+@app.post("/qbit/api/v2/auth/login")
+async def q_login(request: Request):
+    from fastapi import Response
+    f = await _form(request)
+    if f.get("username") == "admin" and f.get("password") == "secret":
+        r = Response("Ok.")
+        r.set_cookie("SID", "qsid")
+        return r
+    return Response("Fails.")
+
+
+@app.get("/qbit/api/v2/app/version")
+def q_version(request: Request):
+    from fastapi import Response
+    _qcheck(request)
+    return Response("v5.1.0")
+
+
+@app.get("/qbit/api/v2/app/preferences")
+def q_prefs(request: Request):
+    _qcheck(request)
+    return QBIT["prefs"]
+
+
+@app.post("/qbit/api/v2/app/setPreferences")
+async def q_set_prefs(request: Request):
+    _qcheck(request)
+    f = await _form(request)
+    QBIT["prefs"].update(_json.loads(f["json"]))
+    QBIT["log"].append(("setPreferences", _json.loads(f["json"])))
+    return {}
+
+
+@app.get("/qbit/api/v2/torrents/info")
+def q_torrents(request: Request):
+    _qcheck(request)
+    return list(QBIT["torrents"].values())
+
+
+@app.post("/qbit/api/v2/torrents/setShareLimits")
+async def q_limits(request: Request):
+    _qcheck(request)
+    f = await _form(request)
+    for h in f["hashes"].split("|"):
+        QBIT["torrents"][h]["ratio_limit"] = float(f["ratioLimit"])
+        QBIT["torrents"][h]["seeding_time_limit"] = int(f["seedingTimeLimit"])
+    QBIT["log"].append(("setShareLimits", f))
+    return {}
+
+
+@app.post("/qbit/api/v2/torrents/delete")
+async def q_delete(request: Request):
+    _qcheck(request)
+    f = await _form(request)
+    for h in f["hashes"].split("|"):
+        QBIT["torrents"].pop(h, None)
+    QBIT["log"].append(("delete", f))
+    return {}

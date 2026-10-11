@@ -63,7 +63,8 @@ export default function DownloadsPage() {
             {st("no_video").count > 0 && <li>{t(`${entries(st("no_video").count)} contain no video – leftovers from downloads (${bytes(st("no_video").size)}).`, `${entries(st("no_video").count)} inneholder ingen video – rester etter nedlasting (${bytes(st("no_video").size)}).`)}</li>}
           </ul>
           <p className="small muted">{t("If something is still seeding, the torrent will report missing files after deletion. Remove it in the download client then.",
-            "Ligger noe fortsatt til deling, vil torrenten melde at filene mangler etter sletting. Fjern den da i nedlastingsklienten.")}</p>
+            "Ligger noe fortsatt til deling, vil torrenten melde at filene mangler etter sletting. Fjern den da i nedlastingsklienten.")}{" "}
+            <a href="#/rules/seeding">{t("Remove imported torrents in qBittorrent, and stop endless seeding, under Download rules.", "Fjern importerte torrenter i qBittorrent, og stopp evig deling, under Nedlastingsregler.")}</a></p>
           {data && !data.files_enabled && <SwitchedOff what="files" />}
           {data && data.files_enabled && ro.length > 0 && <div className="notice">{t(`${ro.join(", ")} is mounted read-only (:ro). Remove :ro in the app's compose file to delete from here.`, `${ro.join(", ")} er montert skrivebeskyttet (:ro). Fjern :ro i appens compose-fil for å kunne slette herfra.`)}</div>}
         </section>

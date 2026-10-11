@@ -53,6 +53,9 @@ services:
       # SMC_TAUTULLI_API_KEY: ""
       # SMC_SEERR_URL: "http://<nas-ip>:30357"
       # SMC_SEERR_API_KEY: ""
+      # SMC_QBITTORRENT_URL: "http://<nas-ip>:30024"
+      # SMC_QBITTORRENT_USERNAME: ""
+      # SMC_QBITTORRENT_PASSWORD: ""
       # Optional login (basic auth) for the web UI:
       # SMC_USERNAME: "admin"
       # SMC_PASSWORD: ""

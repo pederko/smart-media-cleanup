@@ -18,6 +18,7 @@ import logging
 import re
 import time
 
+from .clients import arr
 from . import db
 from .actions import _arr, _req, enabled as actions_enabled
 from .i18n import L, ActionError, Forbidden, fmt, store
@@ -205,7 +206,7 @@ def _swap_now(service: str, base: str, h: dict, sw: dict, download_id: str) -> d
                   "releaseGroup": p.get("releaseGroup"), "downloadId": download_id, "indexerFlags": p.get("indexerFlags", 0)}
                  for p in proposals]
     else:
-        old = [f["id"] for f in _req("GET", f"{base}/api/v3/episodefile", h, params={"seriesId": sw["arr_id"]}).json()
+        old = [f["id"] for f in (arr.episode_files(base, h, sw["arr_id"]) or [])
                if f.get("seasonNumber") == sw["season"]]
         if old:
             _req("DELETE", f"{base}/api/v3/episodefile/bulk", h, json={"episodeFileIds": old})
@@ -236,7 +237,7 @@ def poll(sid: int | None = None) -> list[dict]:
                     mv = _req("GET", f"{base}/api/v3/movie/{sw['arr_id']}", h).json()
                     has_file = bool(mv.get("hasFile"))
                 else:
-                    files = _req("GET", f"{base}/api/v3/episodefile", h, params={"seriesId": sw["arr_id"]}).json()
+                    files = (arr.episode_files(base, h, sw["arr_id"]) or [])
                     has_file = any(f.get("seasonNumber") == sw["season"] for f in files)
                 if has_file and not item:
                     note = _after(service, base, h, sw)

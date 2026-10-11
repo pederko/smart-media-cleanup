@@ -393,3 +393,18 @@ tr.rec td { background: color-mix(in srgb, var(--risk-low) 7%, transparent); }
 .map-row { display: grid; grid-template-columns: 1fr 24px 1fr auto; gap: 8px; align-items: center; margin-bottom: 8px; }
 .ok-text { color: var(--risk-low); }
 .warn-text { color: var(--risk-medium); }
+
+/* ---- Download rules */
+.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 900px) { .cols-2 { grid-template-columns: 1fr; } }
+.rules-list { display: grid; gap: 8px; max-width: 980px; }
+.rule { display: flex; gap: 14px; justify-content: space-between; align-items: flex-start; padding: 10px 14px; background: var(--panel);
+  border: 1px solid var(--rule); border-left: 3px solid var(--faint); border-radius: 0 var(--radius-s) var(--radius-s) 0; margin: 0 0 8px; }
+.rule.warn { border-left-color: var(--risk-medium); }
+.rule.ok { border-left-color: var(--risk-low); }
+.rule > label.check { flex: none; white-space: nowrap; }
+.chip.warn { color: var(--risk-medium); border-color: currentColor; }
+table.sizes input.gb { width: 64px; text-align: right; }
+table.sizes tr.changed td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+ul.results { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 6px; font-size: 14px; }
+@media (max-width: 640px) { .rule { flex-direction: column; } }

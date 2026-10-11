@@ -16,7 +16,7 @@ DATA_DIR = Path(os.environ.get("SMC_DATA_DIR", "/data"))
 MEDIA_ROOT = Path(os.environ.get("SMC_MEDIA_ROOT", "/media"))
 SETTINGS_FILE = DATA_DIR / "settings.json"
 MASK = "********"
-SECRET_KEYS = {"api_key", "token"}
+SECRET_KEYS = {"api_key", "token", "password"}
 
 DEFAULTS: dict[str, Any] = {
     "services": {
@@ -26,6 +26,7 @@ DEFAULTS: dict[str, Any] = {
         "tautulli": {"enabled": True, "url": "", "api_key": ""},
         "seerr": {"enabled": False, "url": "", "api_key": ""},
         "truenas": {"enabled": False, "url": "", "api_key": "", "verify_tls": False, "dataset": ""},
+        "qbittorrent": {"enabled": False, "url": "", "username": "", "password": ""},
     },
     # Libraries that are scanned. host_path = path on the NAS, container_path = mount in this container.
     # kind: movies | series | mixed | downloads. Empty by default – detected from /media on first start.
@@ -86,6 +87,9 @@ ENV_MAP = {
     ("services", "seerr", "api_key"): "SMC_SEERR_API_KEY",
     ("services", "truenas", "url"): "SMC_TRUENAS_URL",
     ("services", "truenas", "api_key"): "SMC_TRUENAS_API_KEY",
+    ("services", "qbittorrent", "url"): "SMC_QBITTORRENT_URL",
+    ("services", "qbittorrent", "username"): "SMC_QBITTORRENT_USERNAME",
+    ("services", "qbittorrent", "password"): "SMC_QBITTORRENT_PASSWORD",
 }
 
 _lock = threading.Lock()

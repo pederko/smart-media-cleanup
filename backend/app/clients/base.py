@@ -15,6 +15,10 @@ class ServiceError(AppError):
     """A service did not answer or answered with an error. Must never crash the app."""
     status = 502
 
+    def __init__(self, msg, code: int | None = None):
+        super().__init__(msg)
+        self.code = code
+
 
 def get_json(url: str, *, params: dict | None = None, headers: dict | None = None,
              retries: int = 2, verify: bool = True) -> Any:
@@ -27,7 +31,7 @@ def get_json(url: str, *, params: dict | None = None, headers: dict | None = Non
                 raise ServiceError(fmt("Authentication refused ({c}) by {h} – check the API key/token",
                                        "Autentisering avvist ({c}) av {h} – sjekk API-nøkkel/token", c=r.status_code, h=_host(url)))
             if r.status_code == 404:
-                raise ServiceError(fmt("Endpoint not found: {p} ({c})", "Fant ikke endepunktet {p} ({c})", p=_path(url), c=r.status_code))
+                raise ServiceError(fmt("Not found: {p} (404){m}", "Ikke funnet: {p} (404){m}", p=_path(url), m=_detail(r)), code=404)
             r.raise_for_status()
             return r.json()
         except ServiceError:
@@ -37,6 +41,16 @@ def get_json(url: str, *, params: dict | None = None, headers: dict | None = Non
             if attempt < retries:
                 time.sleep(1.5 * (attempt + 1))
     raise ServiceError(fmt("No connection to {h}: {e}", "Ingen kontakt med {h}: {e}", h=_host(url), e=f"{type(last).__name__}: {last}"))
+
+
+def _detail(r: httpx.Response) -> str:
+    """The service's own explanation, if it gave one (e.g. «Series with ID 12 does not exist»)."""
+    try:
+        body = r.json()
+        msg = (body.get("message") or body.get("error") or body.get("detail")) if isinstance(body, dict) else None
+    except ValueError:
+        msg = None
+    return f" – {str(msg)[:200]}" if msg else ""
 
 
 def _host(url: str) -> str:

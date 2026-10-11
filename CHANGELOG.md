@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0
+**Download rules** – stop the problem at the source, not only clean up afterwards.
+
+- New page *Prevent → Download rules* that reads how Radarr, Sonarr, Seerr and qBittorrent are set up today and compares it with [TRaSH Guides](https://trash-guides.info):
+  - **Size limits** per quality, shown in GB per movie/episode instead of MB per minute. Presets: *Balanced* (recommended: TRaSH's minimums with a ceiling and a moderate preferred size), *Space saver* and *TRaSH Guides* (no ceiling). Edit any value; the page shows live how many existing files are above the new limits.
+  - **Quality profiles**: allowed qualities, upgrade cutoff, scored custom formats, how many titles use each profile and how much space they take. Flags profiles that allow remuxes, BR-DISK/Raw-HD or score size-heavy custom formats (TrueHD/Atmos/DTS…), and fixes just that – everything else in your profile is left as it is.
+  - **Recommended profiles** (HD Bluray + WEB, WEB-1080p, UHD Bluray + WEB; WEB-1080p/WEB-2160p for Sonarr) can be created with the custom formats, scores and language copied from one of your own profiles.
+  - **Seerr**: which profile new requests get, per server – and change it.
+  - **Seeding**: switch on «Remove completed» in Radarr/Sonarr, set a seeding limit in qBittorrent (ratio/time → stop), and remove finished torrents whose content is already in a library, with their downloaded files. Torrents that are not imported are never removed.
+- Every change is reviewed in one summary and confirmed once. The app re-reads the services before applying and refuses if anything changed, saves a backup of every setting it changes (*Download rules → Backups*, one click to restore) and logs each change.
+- **qBittorrent** is a new optional connection (URL, username, password; also `SMC_QBITTORRENT_*`).
+- **Fixed:** the Sonarr sync stopped with «Endpoint not found: /api/v3/episodefile (404)» when Sonarr answered 404 for a series. The app now falls back to reading the files through the episode list, skips series Sonarr no longer knows (and says which), and shows the service's own explanation in error messages.
+
 ## 1.0.0
 The first complete release: everything from the 0.x series pulled together into one consistent app.
 

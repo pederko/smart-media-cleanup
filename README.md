@@ -45,6 +45,7 @@ The web UI is available in **English and Norwegian** (EN/NO in the menu). *[Les 
 | **Downloads** | What is in the downloads folder, whether it was imported, and what can safely go. |
 | **Plex differences** | Files on disk Plex does not know (with the likely reason), and Plex entries whose files are gone. |
 | **Other storage** | With the TrueNAS integration: which datasets and snapshots use the space outside your libraries, and where to clean them up. Read only. |
+| **Download rules** | How Radarr, Sonarr, Seerr and qBittorrent are set up, compared with TRaSH Guides: size limits per quality, quality profiles (remuxes, size-heavy custom formats), Seerr's default profile and seeding limits. Change them with one confirmation; a backup is saved first. |
 | **Activity** | Background jobs, swaps in progress and the log of everything the app has deleted. |
 
 | Suggestion with explanation | Swap quality |
@@ -54,6 +55,10 @@ The web UI is available in **English and Norwegian** (EN/NO in the menu). *[Les 
 | Title panel | Settings: libraries and paths |
 |---|---|
 | ![Title](docs/screenshots/title.png) | ![Settings](docs/screenshots/settings.png) |
+
+| Download rules | Size limits |
+|---|---|
+| ![Download rules](docs/screenshots/rules.png) | ![Size limits](docs/screenshots/rules-sizes.png) |
 
 <img src="docs/screenshots/mobile.png" alt="Mobile" width="280">
 
@@ -82,6 +87,7 @@ The web UI is available in **English and Norwegian** (EN/NO in the menu). *[Les 
 | Least privilege | Runs as `568:568` (apps), `cap_drop: ALL`, `no-new-privileges`, read-only root file system. Only the folders you mount are visible; app data, `ix-apps` and the like are out of reach. |
 | No ZFS access | No `zfs` commands. The optional TrueNAS integration uses an API key with the *Read-Only Admin* role. Snapshots are never touched. |
 | Secrets | Stored in `/data/settings.json` (mode 600) or as environment variables, masked in the API and UI. The browser only talks to the app, so the Plex token and API keys never leave the server. |
+| Download rules | Size limits, profiles, Seerr and qBittorrent settings are only changed after a review, with the services re-read first. Every changed setting is backed up to `/data/backups/arr-setup-*.json` (mode 600) and can be restored from the page. Torrents are only removed when they are finished and their content is found in a library. |
 | Logged | Every deletion, swap and Plex change is shown under Activity → Deletion log and stored in the database (`audit`). |
 
 ## Install on TrueNAS SCALE
@@ -155,6 +161,7 @@ The overview shows a checklist until everything is in place.
    | Tautulli | `http://<nas-ip>:<port>` | Settings → Web Interface → API key |
    | Seerr (optional) | `http://<nas-ip>:<port>` | Settings → General → API Key |
    | TrueNAS (optional) | `https://<nas-ip>` | API key for a user with the *Read-Only Admin* role |
+   | qBittorrent (optional) | `http://<nas-ip>:<port>` | Web UI username and password |
 
    Use the NAS's LAN IP – `localhost` points to the app's own container.
 3. **Path mappings** – Radarr, Sonarr and Plex usually see the folders under other paths (e.g. `/movies` inside their containers). After the first sync, the app reads their root folders and suggests mappings by folder name; press **Use** and save.
@@ -169,11 +176,24 @@ The overview shows a checklist until everything is in place.
 - **Downloads:** filter on *Can be deleted*. Remove torrents that are still seeding in the download client first.
 - **Plex differences:** ask Plex to rescan a folder, delete folders that are on disk only, or remove Plex entries whose files are gone (requires *Allow media deletion* in Plex → Settings → Library).
 
+### Download rules: stop new large files and endless seeding
+
+Cleaning up helps once; the rules decide what comes in next. Under **Prevent → Download rules**:
+
+- **Recommendations** lists what differs from the recommended setup. Tick what you want, press **Review…**, check the summary and apply.
+- **Size limits**: choose *Balanced* (recommended), *Space saver* or *TRaSH Guides* and adjust single values. Sizes are shown per movie (2 h) or episode (45 min). Existing files are not touched – the table shows how many are above the new limits, and *Swap quality* can replace them.
+- **Quality profiles**: stop remuxes, BR-DISK and Raw-HD in a profile, or create a recommended profile based on one of yours (keeps your custom formats). TRaSH's full custom format set (release groups, HDR, audio) is best synced with [Recyclarr](https://recyclarr.dev) – this page only touches what drives file size.
+- **Seerr**: choose the profile new requests get.
+- **Seeding**: for finished torrents to disappear by themselves, qBittorrent must stop a torrent when it has seeded enough, and Radarr/Sonarr must have *Remove completed* on. Both can be set here. With qBittorrent connected, finished torrents that are already in a library can be removed with their downloaded files right away. Private trackers may require a minimum seeding time – their rules win.
+- **Backups**: every change saves the previous settings first; restore with one click.
+
+Changing these needs *Allow changes through Radarr, Sonarr, Plex, Seerr and qBittorrent* under Settings → Deletion.
+
 ### Switching deletion on
 
 Under **Settings → Deletion**:
 
-- **Allow changes through Radarr, Sonarr and Plex** – delete movies, series and seasons, swap to smaller versions, and remove Plex entries without files.
+- **Allow changes through Radarr, Sonarr, Plex, Seerr and qBittorrent** – delete movies, series and seasons, swap to smaller versions, remove Plex entries without files, and apply download rules.
 - **Allow deleting files on disk** – redundant duplicates, downloads and orphaned folders. Also remove `:ro` on the folders in question (Apps → mediacleanup → Edit). The section shows write access per folder.
 
 Duplicates Radarr/Sonarr know are deleted through them, followed by a rescan so they use the file you keep (it has to be in the same folder). Protection applies to whole titles; duplicates in protected libraries can still be cleaned up unless you switch on *Protection also applies to duplicates*.
@@ -221,6 +241,7 @@ Settings are stored in `/data/settings.json` and edited in the app. Environment 
 | `SMC_TAUTULLI_URL`, `SMC_TAUTULLI_API_KEY` | Tautulli |
 | `SMC_SEERR_URL`, `SMC_SEERR_API_KEY` | Seerr/Overseerr |
 | `SMC_TRUENAS_URL`, `SMC_TRUENAS_API_KEY` | TrueNAS (read-only) |
+| `SMC_QBITTORRENT_URL`, `SMC_QBITTORRENT_USERNAME`, `SMC_QBITTORRENT_PASSWORD` | qBittorrent |
 | `SMC_USERNAME`, `SMC_PASSWORD` | Switches on a login (basic auth) for the web UI |
 | `SMC_LOG_LEVEL` | `INFO` (default) or `DEBUG` |
 | `TZ` | Time zone |
@@ -292,6 +313,8 @@ A periodic snapshot task on the app's dataset is a good addition. The app itself
 | Delete buttons say the switch is off | Switch it on under Settings → Deletion. Files on disk also need `:ro` removed. |
 | «Delete 0 files» / «mounted read-only» | The folder is mounted `:ro`. Remove `:ro` under Edit on the app. |
 | A swap says «Needs help» | Radarr/Sonarr had objections to the file. The old file is untouched. Read the message, and import or remove the download under Activity → Queue in Radarr/Sonarr. |
+| Sonarr sync says «Not found: /api/v3/episodefile (404)» | Fixed in 1.1: the app reads the files another way and skips series Sonarr no longer knows. If every series fails, check the Sonarr URL (including any URL base). |
+| qBittorrent «refused the username or password» | Check the Web UI user. After several failed attempts qBittorrent bans the IP for a while. |
 | Plex refuses to remove entries | Switch on «Allow media deletion» in Plex → Settings → Library. |
 | The Update button in TrueNAS is greyed out | TrueNAS has not checked yet (once a day). Run `midclt -t 600 call app.image.op.check_update`. |
 
@@ -309,7 +332,7 @@ backend/app/
   jobs.py          one worker thread + scheduler
   sync.py          fetches from the services; each fails independently
   scanner.py       incremental file scan, partial hash
-  clients/         radarr/sonarr (arr.py), plex, tautulli, seerr, truenas (JSON-RPC, read-only)
+  clients/         radarr/sonarr (arr.py), plex, tautulli, seerr, qbit, truenas (JSON-RPC, read-only)
   analysis/
     linking.py     files → titles, watch history per title/season, protection
     engine.py      duplicates, suggestions, scores, savings without double counting
@@ -321,6 +344,7 @@ backend/app/
   releases.py      search for smaller versions through Radarr/Sonarr
   swaps.py         swap: download first, swap afterwards
   quality.py       the Swap quality overview and batch swaps
+  arrsetup.py      download rules: size limits, profiles, Seerr defaults, seeding (plan → token → execute, backup/restore)
   plexcheck.py     disk vs Plex, delete orphaned folders, remove missing entries from Plex
   posters.py       posters from Plex/Radarr/Sonarr with a local cache
   updates.py       checks GitHub for new releases
@@ -349,4 +373,5 @@ The tests start imitations of Radarr, Sonarr, Plex, Tautulli and Seerr, create s
 - Folders with an unchanged mtime are not stat'ed by the incremental scan. Files changed in place without the folder changing are caught by the weekly full scan.
 - Plex labels protect movies and series, not single episodes.
 - Titles that are in neither Radarr nor Sonarr cannot be deleted as a whole from the app, except as folders on disk under Plex differences.
-- Torrents in the download client are not removed by the app.
+- Only qBittorrent is supported as a torrent client for seeding cleanup. Torrents are removed only when they are finished and their content is found in a scanned library.
+- Download rules do not sync TRaSH's full custom format set; use Recyclarr or Notifiarr for that.

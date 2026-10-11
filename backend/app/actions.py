@@ -21,6 +21,7 @@ import httpx
 
 from . import db, jobs, settings
 from .analysis import engine
+from .clients import arr
 from .clients.base import ServiceError
 from .i18n import L, ActionError, Conflict, Forbidden, fmt, store, text
 
@@ -199,7 +200,7 @@ def _do_sonarr_season(it: dict, t: dict) -> dict:
     if changed:
         _req("PUT", f"{base}/api/v3/series/{sid}", h, json=series)
     # 2) Delete the season's episode files
-    files = _req("GET", f"{base}/api/v3/episodefile", h, params={"seriesId": sid}).json()
+    files = (arr.episode_files(base, h, sid) or [])
     ids = [f["id"] for f in files if f.get("seasonNumber") == sn]
     if ids:
         _req("DELETE", f"{base}/api/v3/episodefile/bulk", h, json={"episodeFileIds": ids})

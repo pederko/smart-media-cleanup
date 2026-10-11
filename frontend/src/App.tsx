@@ -12,6 +12,7 @@ import OtherPage from "./pages/Other";
 import OverviewPage from "./pages/Overview";
 import PlexCheckPage from "./pages/PlexCheck";
 import QualityPage from "./pages/Quality";
+import RulesPage from "./pages/Rules";
 import SettingsPage from "./pages/Settings";
 import SuggestionsPage from "./pages/Suggestions";
 
@@ -31,6 +32,9 @@ const NAV: { en: string; nb: string; items: NavItem[] }[] = [
     { id: "downloads", en: "Downloads", nb: "Nedlastinger" },
     { id: "plex", en: "Plex differences", nb: "Plex-avvik" },
     { id: "other", en: "Other storage", nb: "Annen lagring" },
+  ] },
+  { en: "Prevent", nb: "Forebygg", items: [
+    { id: "rules", en: "Download rules", nb: "Nedlastingsregler" },
   ] },
   { en: "System", nb: "System", items: [
     { id: "activity", en: "Activity", nb: "Aktivitet" },
@@ -121,6 +125,7 @@ export default function App() {
     case "users": page = param ? <UserPage name={param} /> : <UsersPage />; break;
     case "files": page = <FilesPage />; break;
     case "quality": page = <QualityPage />; break;
+    case "rules": page = <RulesPage tab={param} />; break;
     case "duplicates": page = <DuplicatesPage />; break;
     case "downloads": page = <DownloadsPage />; break;
     case "plex": page = <PlexCheckPage />; break;

@@ -6,7 +6,7 @@ import time
 from typing import Callable
 
 from . import db, settings
-from .clients import arr, plex, seerr, tautulli, truenas
+from .clients import arr, plex, qbit, seerr, tautulli, truenas
 from .clients.base import ServiceError
 from .i18n import L, fmt, text
 
@@ -15,6 +15,7 @@ Progress = Callable[[float, str], None]
 STATUS_FUNCS = {
     "radarr": arr.status, "sonarr": arr.status, "plex": plex.status,
     "tautulli": tautulli.status, "seerr": seerr.status, "truenas": truenas.status,
+    "qbittorrent": qbit.status,
 }
 
 
@@ -99,13 +100,17 @@ def run(progress: Progress) -> dict:
         return len(rows), fmt("{n} movies", "{n} filmer", n=len(rows))
 
     def do_sonarr(p):
-        series, files = arr.fetch_sonarr(svc["sonarr"], mp, p)
+        series, files, skipped = arr.fetch_sonarr(svc["sonarr"], mp, p)
         roots = _roots("sonarr")
         with db.conn() as c:
             _store_roots(c, "sonarr", roots)
             _replace(c, "sonarr_series", series)
             _replace(c, "sonarr_files", files)
-        return len(series), fmt("{n} series, {f} episode files", "{n} serier, {f} episodefiler", n=len(series), f=len(files))
+        msg = fmt("{n} series, {f} episode files", "{n} serier, {f} episodefiler", n=len(series), f=len(files))
+        if skipped:
+            msg = fmt("{m} ({k} skipped: {names})", "{m} ({k} hoppet over: {names})", m=msg, k=len(skipped),
+                      names=", ".join(skipped[:5]) + ("…" if len(skipped) > 5 else ""))
+        return len(series), msg
 
     def do_plex(p):
         items, parts, libs = plex.fetch(svc["plex"], mp, s["protection"]["plex_labels"], p)
@@ -142,12 +147,20 @@ def run(progress: Progress) -> dict:
                                           "{d} datasett, snapshots på rotdatasettet: {n}", d=len(info["datasets"]),
                                           n=n if n is not None else "?")
 
+    def do_qbit(p):
+        with qbit.Client(svc["qbittorrent"]) as q:
+            torrents = q.torrents()
+        seeding = sum(1 for t in torrents if (t.get("progress") or 0) >= 1 and "pause" not in (t.get("state") or "")
+                      and "stopped" not in (t.get("state") or ""))
+        return len(torrents), fmt("{n} torrents, {s} seeding", "{n} torrenter, {s} deler", n=len(torrents), s=seeding)
+
     step("radarr", 0.0, do_radarr)
     step("sonarr", 0.15, do_sonarr)
     step("plex", 0.35, do_plex)
     step("tautulli", 0.6, do_tautulli)
     step("seerr", 0.8, do_seerr)
     step("truenas", 0.9, do_truenas)
+    step("qbittorrent", 0.95, do_qbit)
     with db.conn() as c:
         db.kv_set(c, "last_sync", time.time())
     progress(1.0, L("Sync finished", "Synkronisering ferdig"))

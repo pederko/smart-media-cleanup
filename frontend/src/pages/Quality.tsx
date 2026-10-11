@@ -92,7 +92,8 @@ export default function QualityPage() {
             {s.protected > 0 && <li>{t(`${num(s.protected)} are protected and cannot be swapped.`, `${num(s.protected)} er beskyttet og kan ikke byttes.`)}</li>}
           </ul>
           <p className="small muted">{t(`Limit: movies over ${num(data.limits.movie_gb, 1)} GB, seasons with episodes over ${num(data.limits.episode_gb, 1)} GB on average. Change it here or under Settings → Analysis.`,
-            `Grense: filmer over ${num(data.limits.movie_gb, 1)} GB, sesonger med episoder over ${num(data.limits.episode_gb, 1)} GB i snitt. Endres her eller under Innstillinger → Analyse.`)}</p>
+            `Grense: filmer over ${num(data.limits.movie_gb, 1)} GB, sesonger med episoder over ${num(data.limits.episode_gb, 1)} GB i snitt. Endres her eller under Innstillinger → Analyse.`)}{" "}
+            <a href="#/rules/sizes">{t("To stop new large files from coming in, set size limits under Download rules.", "For å hindre at nye store filer kommer inn, sett størrelsesgrenser under Nedlastingsregler.")}</a></p>
         </section>
       )}
 
