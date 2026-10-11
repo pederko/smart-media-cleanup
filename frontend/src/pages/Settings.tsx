@@ -193,15 +193,16 @@ export default function SettingsPage() {
 
       <section className="section">
         <h2>Sletting</h2>
-        <label className="check"><input type="checkbox" checked={!!s.actions?.enabled} onChange={(e) => setS({ ...s, actions: { ...s.actions, enabled: e.target.checked } })} />Tillat sletting og bytte av filmer og serier via Radarr og Sonarr</label>
+        <label className="check"><input type="checkbox" checked={!!s.actions?.enabled} onChange={(e) => setS({ ...s, actions: { ...s.actions, enabled: e.target.checked } })} />Tillat sletting og bytte via Radarr og Sonarr, og opprydding i Plex</label>
         <ul className="conseq small muted" style={{ maxWidth: 720 }}>
           <li>Filmer slettes i Radarr og serier i Sonarr, med filer. Filmer legges ikke på ekskluderingslisten.</li>
           <li>Enkeltsesonger avovervåkes i Sonarr før episodefilene slettes, så de ikke lastes ned igjen.</li>
           <li>«Bytt» til en mindre versjon laster ned først. Den gamle filen slettes via Radarr/Sonarr først når den nye er ferdig og kan importeres.</li>
           <li>Beskyttede titler (Barn, tagger, etiketter) kan aldri slettes eller byttes.</li>
+          <li>Plex-oppføringer der filene mangler på disk kan fjernes fra Plex (under Plex-avvik). Krever «Allow media deletion» i Plex.</li>
           <li>Alt som slettes, loggføres under Logg.</li>
         </ul>
-        <label className="check" style={{ marginTop: 12 }}><input type="checkbox" checked={!!s.actions?.files_enabled} onChange={(e) => setS({ ...s, actions: { enabled: !!s.actions?.enabled, files_enabled: e.target.checked } })} />Tillat sletting av filer: overflødige duplikater og gamle nedlastinger</label>
+        <label className="check" style={{ marginTop: 12 }}><input type="checkbox" checked={!!s.actions?.files_enabled} onChange={(e) => setS({ ...s, actions: { enabled: !!s.actions?.enabled, files_enabled: e.target.checked } })} />Tillat sletting av filer: duplikater, nedlastinger og mapper som verken er i Radarr, Sonarr eller Plex</label>
         <FilesAccess />
       </section>
 

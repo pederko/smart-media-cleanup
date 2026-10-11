@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import ReleaseSearch from "../components/ReleaseSearch";
 import { qs } from "../api";
 import { ago, bytes, date, fileName, num } from "../format";
 import { ErrorNote, Poster, RequestedBy, useFetch, useOpenTitle, useRefreshTick } from "../components/common";
@@ -75,7 +76,7 @@ export function TitlesPage() {
   );
 }
 
-type F = { path: string; size: number; library: string; ext: string; nlink: number; mtime: number; is_extra: number;
+type F = { year?: number | null; radarr_id?: number | null; sonarr_id?: number | null; season?: number | null; path: string; size: number; library: string; ext: string; nlink: number; mtime: number; is_extra: number;
   title_key: string | null; title_name: string | null; play_count: number | null; last_played: number | null };
 
 export function FilesPage() {
@@ -85,6 +86,7 @@ export function FilesPage() {
   const [ext, setExt] = useState("");
   const [minGb, setMinGb] = useState("20");
   const [limit, setLimit] = useState(100);
+  const [search, setSearch] = useState<string | null>(null);
   const { data, error } = useFetch<{ total: number; total_bytes: number; items: F[] }>(`/api/files/largest${qs({ library, ext, min_gb: minGb, limit })}`, [tick]);
   const settings = useFetch<{ libraries: { name: string }[] }>("/api/settings");
   return (
@@ -106,15 +108,25 @@ export function FilesPage() {
       {data && <p className="small muted">{num(data.total)} filer, {bytes(data.total_bytes)} til sammen.</p>}
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Fil</th><th>Tittel</th><th>Sist sett</th><th className="r">Størrelse</th></tr></thead>
+          <thead><tr><th>Fil</th><th>Tittel</th><th>Sist sett</th><th className="r">Størrelse</th><th /></tr></thead>
           <tbody>
             {data?.items.map((f) => (
-              <tr key={f.path} className="row">
+              <Fragment key={f.path}>
+              <tr className="row">
                 <td>{fileName(f.path)}{f.nlink > 1 && <span className="tag" style={{ marginLeft: 8 }}>{f.nlink} hardlenker</span>}{f.ext === ".iso" && <span className="tag" style={{ marginLeft: 8 }}>ISO</span>}<div className="path">{f.library}</div></td>
-                <td>{f.title_key ? <button className="btn small" style={{ border: 0, background: "none", padding: 0, textAlign: "left" }} onClick={() => openTitle(f.title_key!)}>{f.title_name}</button> : <span className="muted">–</span>}</td>
+                <td>{f.title_key ? <button className="linkish" style={{ textAlign: "left" }} onClick={() => openTitle(f.title_key!)}>{f.title_name}{f.year ? ` (${f.year})` : ""}</button> : <span className="muted">–</span>}
+                  {f.season != null && <div className="small muted">Sesong {f.season}</div>}</td>
                 <td className="muted">{f.title_key ? ago(f.last_played) : ""}</td>
                 <td className="r num">{bytes(f.size)}</td>
+                <td className="r">{f.title_key && (f.radarr_id != null || (f.sonarr_id != null && f.season != null)) &&
+                  <button className="btn small" onClick={() => setSearch(search === f.path ? null : f.path)} aria-expanded={search === f.path}>{search === f.path ? "Skjul" : "Finn mindre"}</button>}</td>
               </tr>
+              {search === f.path && f.title_key && (
+                <tr className="detail"><td colSpan={5}>
+                  <ReleaseSearch titleKey={f.title_key} season={f.radarr_id != null ? undefined : f.season ?? undefined} autoStart />
+                </td></tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>

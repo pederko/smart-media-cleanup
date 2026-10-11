@@ -664,3 +664,46 @@ def test_downloads_delete_folder(client, no_refresh):
     root = _media_root()
     assert not os.path.exists(f"{root}/tmp/Old.Download")
     assert os.path.exists(f"{root}/FILM/Big Movie (2010)")
+
+
+def test_plex_remove_missing_item(client, no_refresh):
+    _enable(client, False)
+    p = client.post("/api/plex-check/remove/plan", json={"keys": ["movie:199"]}).json()
+    assert p["enabled"] is False and p["count"] == 1 and p["items"][0]["calls"][0]["rating_key"] == "199"
+    assert client.post("/api/plex-check/remove/execute", json={"keys": ["movie:199"], "token": p["token"]}).status_code == 403
+    _enable(client, True)
+    try:
+        # Big Movie finnes på disk → ingen kall
+        p = client.post("/api/plex-check/remove/plan", json={"keys": ["movie:199", "movie:101"]}).json()
+        bad = next(i for i in p["items"] if i["key"] == "movie:101")
+        assert not bad["ok"] and "finnes" in bad["reason"]
+        assert client.post("/api/plex-check/remove/execute", json={"keys": ["movie:199"], "token": "feil"}).status_code == 409
+        r = client.post("/api/plex-check/remove/execute", json={"keys": ["movie:199", "movie:101"], "token": p["token"]}).json()
+        assert r["done"] == 1 and ms.PLEX_DELETES == ["/library/metadata/199"]
+    finally:
+        _enable(client, False)
+
+
+def test_delete_orphan_folder_from_disk(client, no_refresh):
+    from pathlib import Path
+    root = Path(_media_root())
+    orphan = _title("Orphan")["key"]
+    assert orphan.startswith("dir:")
+    _enable_files(client, True)
+    try:
+        p = client.post("/api/plex-check/delete/plan", json={"keys": [orphan, _title("Big Movie")["key"]]}).json()
+        ok = next(i for i in p["items"] if i["key"] == orphan)
+        assert ok["ok"] and ok["freed"] == 6 * GB + 41 and p["count"] == 1
+        assert "Radarr" in next(i for i in p["items"] if i["key"] != orphan)["reason"]
+        # ny fil siden skanning → stopper
+        extra = root / "FILM/Orphan (2001)/ny.nfo"
+        extra.write_text("x")
+        p2 = client.post("/api/plex-check/delete/plan", json={"keys": [orphan]}).json()
+        assert not p2["items"][0]["ok"] and "endret" in p2["items"][0]["reason"]
+        extra.unlink()
+        assert client.post("/api/plex-check/delete/execute", json={"keys": [orphan], "token": "feil"}).status_code == 409
+        p = client.post("/api/plex-check/delete/plan", json={"keys": [orphan]}).json()
+        r = client.post("/api/plex-check/delete/execute", json={"keys": [orphan], "token": p["token"]}).json()
+        assert r["done"] == 1 and not (root / "FILM/Orphan (2001)").exists() and (root / "FILM").exists()
+    finally:
+        _enable_files(client, False)

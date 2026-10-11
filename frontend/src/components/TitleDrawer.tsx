@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import DeleteDialog from "./DeleteDialog";
+import CleanupDialog from "./CleanupDialog";
 import ReleaseSearch from "./ReleaseSearch";
 import SwapList from "./Swaps";
 import { Suggestion } from "../api";
@@ -21,6 +22,7 @@ type TitleDetail = {
 
 export default function TitleDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const [deleting, setDeleting] = useState<string[] | null>(null);
+  const [diskDelete, setDiskDelete] = useState(false);
   const { data, error, reload } = useFetch<TitleDetail>(`/api/titles/${encodeURIComponent(id)}`, [id]);
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -58,6 +60,14 @@ export default function TitleDrawer({ id, onClose }: { id: string; onClose: () =
               const managed = data.radarr_id != null || data.sonarr_id != null;
               const whole = data.suggestions.find((x) => x.kind === "delete_title");
               const seasons = data.suggestions.filter((x) => x.kind === "delete_season");
+              if (!data.protected && !managed && data.key.startsWith("dir:")) {
+                return (
+                  <div className="delete-row">
+                    <button className="btn danger" onClick={() => setDiskDelete(true)}>Slett mappen fra disk ({bytes(data.alloc || data.size)})…</button>
+                    <span className="small muted">Ligger verken i Radarr eller Sonarr, så den slettes direkte på disk.</span>
+                  </div>
+                );
+              }
               if (data.protected || !managed || (!whole && seasons.length === 0)) return null;
               return (
                 <div className="delete-row">
@@ -155,6 +165,7 @@ export default function TitleDrawer({ id, onClose }: { id: string; onClose: () =
           </>
         )}
       </aside>
+      {diskDelete && data && <CleanupDialog mode="disk" keys={[data.key]} onClose={() => setDiskDelete(false)} onDone={() => reload()} />}
       {deleting && <DeleteDialog ids={deleting} onClose={() => setDeleting(null)} onDone={() => reload()} />}
     </>
   );

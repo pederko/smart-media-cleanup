@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.11.0
+- **Plex-avvik → I Plex, mangler på disk:** kryss av og «Fjern fra Plex». Hele serien fjernes hvis alt mangler, ellers bare episodene (eller versjonene) som mangler. Appen kontrollerer rett før hvert kall at filene ikke finnes og at mappen er montert. Krever «Allow media deletion» i Plex.
+- **Plex-avvik → På disk, ikke i Plex:** mapper som verken er i Radarr, Sonarr eller Plex kan slettes direkte fra disk. Også fra tittelvisningen («Slett mappen fra disk»). Samme bryter og skrivetilgang som duplikater, og stopper hvis mappen har endret seg siden skanning.
+- **Største filer:** tittelen er en tydelig lenke, og «Finn mindre» søker etter mindre versjoner (og bytter) rett fra listen.
+
 ## 0.10.0
 - **Bytt til mindre versjon** – «last ned først, bytt etterpå». Fra «Finn mindre versjon» velger du en utgivelse og trykker Bytt. Radarr/Sonarr laster den ned mens den store filen blir liggende. Når nedlastingen er ferdig og den eneste innvendingen er «ikke en oppgradering», slettes den gamle filen via Radarr/Sonarr og den nye importeres. Andre innvendinger stopper byttet uten at noe slettes.
 - Valgfritt etter byttet: avovervåk tittelen/sesongen eller bytt kvalitetsprofil, så den ikke oppgraderes tilbake.

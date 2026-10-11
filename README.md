@@ -4,8 +4,8 @@ Analyse og opprydding av mediebiblioteket på TrueNAS SCALE. Appen kobler filene
 
 **Appen starter skrivebeskyttet.** Mediemappene monteres `:ro`, og all sletting er av. Det finnes to brytere under Innstillinger → Sletting:
 
-1. **Via Radarr/Sonarr:** slett filmer, serier og sesonger, og bytt store filer til mindre versjoner. Radarr og Sonarr gjør selve slettingen.
-2. **Filer på disk:** slett overflødige duplikater og gamle nedlastinger. Krever i tillegg at mappene monteres uten `:ro`.
+1. **Via tjenestene:** slett filmer, serier og sesonger, bytt store filer til mindre versjoner, og fjern Plex-oppføringer der filene mangler. Radarr, Sonarr og Plex gjør selve endringen.
+2. **Filer på disk:** slett overflødige duplikater, gamle nedlastinger og mapper som verken ligger i Radarr, Sonarr eller Plex. Krever i tillegg at mappene monteres uten `:ro`.
 
 Ingenting slettes uten en oppsummering og ett bekreftende klikk, og alt loggføres.
 
@@ -38,10 +38,10 @@ Ingenting slettes uten en oppsummering og ett bekreftende klikk, og alt loggfør
 - **Forslag:** rangert liste med søk, filtre og sortering. Hver rad viser handling, risiko, seerhistorikk og frigjort plass. Åpnet rad viser poengberegningen linje for linje, konsekvenser for Radarr/Sonarr/Plex og berørte filer.
 - **Utvalg:** huk av forslag og se samlet gevinst. Overlapp (for eksempel en serie og en av sesongene) og hardlinker telles riktig.
 - **Duplikater:** identiske kopier, alternative versjoner og hardlenker (som ikke er duplikater) holdes adskilt. Oppsummering øverst, faner, filtre og sortering etter gevinst. Velg hvilken fil som beholdes med ett klikk og slett resten.
-- **Titler og største filer:** oppslag og sortering for 4K-remuxer, ISO-filer og store episoder.
+- **Titler og største filer:** oppslag og sortering for 4K-remuxer, ISO-filer og store episoder. Klikk tittelen for detaljer, eller «Finn mindre» for å søke etter en mindre versjon rett fra listen.
 - **Filmer og Serier:** egne sider med oppsummering øverst – hva som aldri er sett, ikke sett på lenge, trygge slettinger – og en liste som kan filtreres og sorteres på størrelse, seing, anbefaling og gevinst.
 - **Brukere (Seerr):** hvem som ba om hva, og om de har sett det selv. Egen side per bruker med oppsummering og filter for det de ikke har sett.
-- **Plex-avvik:** filer på disk som ikke er i Plex (med sannsynlig årsak: ikke i noe Plex-bibliotek, diskbilde, nylig lagt til, ikke funnet av Plex), og Plex-oppføringer som mangler på disk. «Be Plex skanne» starter en delvis skanning av akkurat den mappen.
+- **Plex-avvik:** filer på disk som ikke er i Plex (med sannsynlig årsak: ikke i noe Plex-bibliotek, diskbilde, nylig lagt til, ikke funnet av Plex), og Plex-oppføringer som mangler på disk. «Be Plex skanne» starter en delvis skanning av akkurat den mappen. Mapper som bare ligger på disk kan slettes, og Plex-oppføringer uten filer kan fjernes fra Plex.
 - **Nedlastinger:** klikk `tmp` i kapasitetsstolpen. Viser hva som ligger i nedlastingsmappen, om det er importert (hardlenket eller kopiert til biblioteket), og anbefaling: kan slettes, vurder eller behold. Alt som er endret de siste 14 dagene beholdes.
 - **Finn mindre versjon og bytt:** søk i indekserne via Radarr (film) eller Sonarr (sesongpakker) etter mindre utgaver, med anbefaling. «Bytt» laster ned den nye først og bytter etterpå. Se [Bytte til mindre versjon](#bytte-til-mindre-versjon).
 - **Sletting (valgfritt):** filmer, serier og enkeltsesonger via Radarr/Sonarr, og duplikater og nedlastinger direkte på disk. Av som standard.
@@ -112,7 +112,16 @@ Slik fungerer det:
 - **Filer Radarr/Sonarr kjenner** slettes via dem (moviefile/episodefile). Deretter skanner de mappen og tar i bruk filen du beholder. Den må derfor ligge i samme film- eller seriemappe og være en videofil, ellers avvises slettingen.
 - **Beskyttede biblioteker og titler** (som Barn) kan ryddes for duplikater. Vil du ikke det, slå på «Beskyttelse gjelder også duplikater» under Innstillinger → Beskyttelse.
 - **Nedlastinger:** slett mapper og filer i `tmp` fra Nedlastinger-siden. Er noe hardlenket inn i biblioteket, frigjøres plassen først når begge er borte (det vises). Torrenter som fortsatt seeder bør fjernes i qBittorrent i stedet.
+- **Mapper bare på disk** (Plex-avvik → «På disk, ikke i Plex», eller «Slett mappen fra disk» i tittelvisningen): hele mappen rett under biblioteket slettes. Bare for titler som verken Radarr eller Sonarr kjenner, der ingen filer er i Plex, og som ikke er beskyttet. Inneholder mappen andre filer enn ved siste skanning, stopper slettingen.
 - Hver fil sjekkes rett før sletting: uendret siden skanning (størrelse, endringstid, inode), inne i et bibliotek, ikke en symlenke, og skrivbar.
+
+### Fjerne fra Plex det som mangler på disk
+
+Under Plex-avvik → «I Plex, mangler på disk» kan du krysse av og velge **Fjern fra Plex…**. Krever bryteren for sletting via tjenestene, og at **Allow media deletion** er slått på i Plex → Settings → Library.
+
+- Mangler hele serien, fjernes serien. Mangler bare noen episoder, fjernes bare de. Har en film flere versjoner, fjernes bare versjonen som mangler.
+- Plex sletter også filene når en oppføring fjernes. Derfor kontrollerer appen rett før hvert kall at ingen av filene finnes, og at biblioteksmappen er montert og har innhold. Er mappen ikke montert, avvises alt, så en manglende montering ikke kan se ut som «alt mangler».
+- Seerhistorikken i Tautulli beholdes.
 
 ### Bytte til mindre versjon
 

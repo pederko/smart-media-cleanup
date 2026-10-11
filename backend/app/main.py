@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from . import actions, db, downloads, dupes, jobs, plexcheck, posters, releases, settings, swaps, sync, updates, views
 from .analysis import engine
 
-VERSION = os.environ.get("SMC_VERSION", "0.10.0")
+VERSION = os.environ.get("SMC_VERSION", "0.11.0")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -559,6 +559,43 @@ def plex_rescan(req: FolderRequest):
         raise HTTPException(400, str(e))
 
 
+class KeysRequest(BaseModel):
+    keys: list[str]
+    token: str | None = None
+
+
+@app.post("/api/plex-check/delete/plan")
+def plex_check_delete_plan(req: KeysRequest):
+    return plexcheck.delete_plan(req.keys)
+
+
+@app.post("/api/plex-check/delete/execute")
+def plex_check_delete_execute(req: KeysRequest):
+    try:
+        return plexcheck.delete_execute(req.keys, req.token or "")
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/api/plex-check/remove/plan")
+def plex_check_remove_plan(req: KeysRequest):
+    return plexcheck.plex_remove_plan(req.keys)
+
+
+@app.post("/api/plex-check/remove/execute")
+def plex_check_remove_execute(req: KeysRequest):
+    try:
+        return plexcheck.plex_remove_execute(req.keys, req.token or "")
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    except actions.ActionError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.get("/api/files/largest")
 def largest_files(library: str = "", ext: str = "", min_gb: float = 0, limit: int = 100, offset: int = 0):
     where, params = ["f.size >= ?"], [int(min_gb * 1024 ** 3)]
@@ -571,8 +608,10 @@ def largest_files(library: str = "", ext: str = "", min_gb: float = 0, limit: in
     with db.conn() as c:
         total, total_bytes = c.execute(f"SELECT COUNT(*), COALESCE(SUM(f.size),0) FROM files f WHERE {' AND '.join(where)}", params).fetchone()
         rows = db.rows(c, f"""SELECT f.path, f.size, f.alloc, f.library, f.ext, f.nlink, f.mtime, f.is_extra,
-                                     ft.title_key, t.name AS title_name, t.play_count, t.last_played
+                                     ft.title_key, t.name AS title_name, t.year, t.play_count, t.last_played,
+                                     t.radarr_id, t.sonarr_id, sf.season
                               FROM files f LEFT JOIN file_title ft ON ft.path=f.path LEFT JOIN titles t ON t.key=ft.title_key
+                              LEFT JOIN sonarr_files sf ON sf.path=f.path
                               WHERE {' AND '.join(where)} ORDER BY f.size DESC LIMIT ? OFFSET ?""",
                        params + [max(1, min(limit, 1000)), offset])
     return {"total": total, "total_bytes": total_bytes, "items": rows}

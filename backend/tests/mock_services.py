@@ -158,6 +158,17 @@ def p_refresh(key: str, path: str, x_plex_token: str = Header(None)):
     return {}
 
 
+PLEX_DELETES: list = []
+
+
+@app.delete("/plex/library/metadata/{rk}")
+@app.delete("/plex/library/metadata/{rk}/media/{mid}")
+def p_delete(rk: str, request: Request, mid: str | None = None, x_plex_token: str = Header(None)):
+    _plex_auth(x_plex_token)
+    PLEX_DELETES.append(request.url.path.replace("/plex", "", 1))
+    return {}
+
+
 @app.get("/plex/library/sections/{key}/label")
 def p_labels(key: str, x_plex_token: str = Header(None)):
     return {"MediaContainer": {"Directory": []}}

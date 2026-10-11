@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { api } from "../api";
 import { bytes, num } from "../format";
 import { useFetch } from "./common";
@@ -52,7 +52,7 @@ function SwapConfirm({ r, titleKey, season, service, current, onDone }: { r: Rel
 }
 
 /** Søk etter mindre versjoner via Radarr/Sonarr sin interaktive søk, med valgfritt bytte. */
-export default function ReleaseSearch({ titleKey, season, label }: { titleKey: string; season?: number; label?: string }) {
+export default function ReleaseSearch({ titleKey, season, label, autoStart }: { titleKey: string; season?: number; label?: string; autoStart?: boolean }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +71,7 @@ export default function ReleaseSearch({ titleKey, season, label }: { titleKey: s
       setRes(await api.get<Result>(`/api/releases/${encodeURIComponent(titleKey)}?${q}`));
     } catch (e) { setError(String((e as Error).message)); } finally { setBusy(false); }
   };
+  useEffect(() => { if (autoStart) run(); }, []);  // eslint-disable-line react-hooks/exhaustive-deps
   const svc = res?.service === "sonarr" ? "Sonarr" : "Radarr";
   const shown = res ? (all ? res.releases : res.releases.slice(0, 8)) : [];
 
