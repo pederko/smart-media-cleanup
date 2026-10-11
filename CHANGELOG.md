@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.9.0
+- Ny side **Plex-avvik**: hva som ligger på disk uten å være i Plex (med sannsynlig årsak: ikke i noe Plex-bibliotek, diskbilde/ISO, nylig lagt til, eller ikke funnet av Plex), og hva Plex peker på som mangler på disk.
+- «Be Plex skanne» starter en delvis skanning av akkurat den mappen i riktig Plex-bibliotek.
+- Mapper utenfor Radarr/Sonarr på formen «Navn (År)» får nå riktig navn og år.
+
 ## 0.8.0
 - Ny side **Nedlastinger** (f.eks. tmp): hva som ligger der, om det er importert (kopi eller hardlenke i biblioteket) eller ikke, alder, og anbefaling (kan slettes / vurder / behold). Slett mapper og filer herfra (samme bryter og skrivetilgang som duplikater).
 - Bibliotekene i kapasitetsstolpen på oversikten er klikkbare: FILM → Filmer, TV → Serier, tmp → Nedlastinger.

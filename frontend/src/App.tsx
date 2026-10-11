@@ -7,6 +7,7 @@ import SuggestionsPage from "./pages/Suggestions";
 import { FilesPage, TitlesPage } from "./pages/Lists";
 import DuplicatesPage from "./pages/Duplicates";
 import DownloadsPage from "./pages/Downloads";
+import PlexCheckPage from "./pages/PlexCheck";
 import SettingsPage, { JobsPage, LogPage } from "./pages/Settings";
 import { LibraryPage, UserPage, UsersPage } from "./pages/Library";
 
@@ -19,6 +20,7 @@ const ROUTES: { id: string; label: string }[] = [
   { id: "titler", label: "Titler" },
   { id: "duplikater", label: "Duplikater" },
   { id: "nedlastinger", label: "Nedlastinger" },
+  { id: "plex", label: "Plex-avvik" },
   { id: "filer", label: "Største filer" },
   { id: "jobber", label: "Jobber" },
   { id: "logg", label: "Logg" },
@@ -88,6 +90,7 @@ export default function App() {
   const param = rest.length ? decodeURIComponent(rest.join("/")) : "";
   switch (section) {
     case "nedlastinger": page = <DownloadsPage />; break;
+    case "plex": page = <PlexCheckPage />; break;
     case "filmer": page = <LibraryPage kind="movie" />; break;
     case "serier": page = <LibraryPage kind="series" />; break;
     case "brukere": page = param ? <UserPage name={param} /> : <UsersPage />; break;

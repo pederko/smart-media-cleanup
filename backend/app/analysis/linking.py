@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from .. import db
 
+YEAR_RE = re.compile(r"^(.+?)\s*\((\d{4})\)\s*$")
 EP_RE = re.compile(r"[Ss](\d{1,3})[ ._-]?[Ee](\d{1,4})")
 MONTH = 30.44 * 86400
 
@@ -193,8 +194,10 @@ def build(c, s: dict, now: float) -> Model:
             folder = root + "/" + top
             key = f"dir:{f.library}:{top}"
             if key not in titles:
-                titles[key] = Title(key, "unknown", os.path.splitext(top)[0] if "/" not in rel else top, None,
-                                    f.library, folder)
+                raw = os.path.splitext(top)[0] if "/" not in rel else top
+                ym = YEAR_RE.match(raw)
+                titles[key] = Title(key, "unknown", ym.group(1).strip() if ym else raw,
+                                    int(ym.group(2)) if ym else None, f.library, folder)
         t = titles[key]
         if not t.library:
             t.library = f.library

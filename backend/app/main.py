@@ -17,10 +17,10 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import actions, db, downloads, dupes, jobs, posters, releases, settings, sync, updates, views
+from . import actions, db, downloads, dupes, jobs, plexcheck, posters, releases, settings, sync, updates, views
 from .analysis import engine
 
-VERSION = os.environ.get("SMC_VERSION", "0.8.0")
+VERSION = os.environ.get("SMC_VERSION", "0.9.0")
 STATIC = Path(os.environ.get("SMC_STATIC_DIR", Path(__file__).resolve().parent.parent / "static"))
 logging.basicConfig(level=os.environ.get("SMC_LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -487,6 +487,23 @@ def downloads_execute(req: PathsRequest):
 def find_releases(key: str, season: int | None = None, refresh: bool = False):
     try:
         return releases.search(key, season, refresh)
+    except actions.ActionError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/plex-check")
+def plex_check(view: str = "not_in_plex", q: str = "", library: str = ""):
+    return plexcheck.overview(view, q, library)
+
+
+class FolderRequest(BaseModel):
+    folder: str
+
+
+@app.post("/api/plex-check/rescan")
+def plex_rescan(req: FolderRequest):
+    try:
+        return plexcheck.rescan(req.folder)
     except actions.ActionError as e:
         raise HTTPException(400, str(e))
 

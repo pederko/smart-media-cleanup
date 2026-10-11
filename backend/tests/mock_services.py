@@ -148,6 +148,16 @@ def _media(path, size, res):
              "Part": [{"file": path, "size": size}]}]
 
 
+PLEX_REFRESH: list = []
+
+
+@app.get("/plex/library/sections/{key}/refresh")
+def p_refresh(key: str, path: str, x_plex_token: str = Header(None)):
+    _plex_auth(x_plex_token)
+    PLEX_REFRESH.append((key, path))
+    return {}
+
+
 @app.get("/plex/library/sections/{key}/label")
 def p_labels(key: str, x_plex_token: str = Header(None)):
     return {"MediaContainer": {"Directory": []}}
@@ -167,6 +177,9 @@ def p_all(key: str, request: Request, x_plex_token: str = Header(None)):
             thumb = None if title == "Keeper" else f"/library/metadata/{rk}/thumb/1700000000"
             items.append({"ratingKey": rk, "title": title, "year": year, "addedAt": int(added), "Media": media,
                           "thumb": thumb})
+        # Plex peker på en fil som ikke finnes på disk lenger
+        items.append({"ratingKey": "199", "title": "Gone", "year": 1999, "addedAt": int(NOW - 3000 * DAY),
+                      "Media": _media("/FILM/Gone (1999)/Gone.1999.mkv", 4 * GB, "1080")})
     elif key == "3" and typ == 1:
         items.append({"ratingKey": KIDS[2], "title": "Kids Movie", "year": 2018, "addedAt": int(NOW - 900 * DAY),
                       "Media": _media(KIDS[0], KIDS[1], "1080")})

@@ -49,6 +49,9 @@ def env(tmp_path_factory):
     for eid, sid, sn, ep, fn, size in ms.EPISODES:
         _sparse(media / show[sid][3].lstrip("/") / fn, size)
     _sparse(media / ms.KIDS[0].lstrip("/"), ms.KIDS[1])
+    # Film på disk som verken Radarr eller Plex kjenner
+    _sparse(media / "FILM/Orphan (2001)/Orphan.2001.1080p.mkv", 6 * GB + 41)
+    _sparse(media / "FILM/Disc (2005)/Disc.2005.iso", 30 * GB + 42)
     # Hardlink fra nedlastingsmappen til en film
     (media / "tmp").mkdir()
     os.link(media / "FILM/Hardlinked (2011)/Hardlinked.2011.mkv", media / "tmp/Hardlinked.2011.mkv")
@@ -197,7 +200,7 @@ def test_old_download_suggested(env):
 
 def test_api_overview_and_lists(client):
     o = client.get("/api/overview").json()
-    assert o["counts"]["movies"] == 8 and o["counts"]["series"] == 2 and o["counts"]["episodes"] == 6
+    assert o["counts"]["movies"] == 10 and o["counts"]["series"] == 2 and o["counts"]["episodes"] == 6
     libs = {l["library"]: l for l in o["libraries"]}
     # Hardlinken telles bare én gang per bibliotek
     assert libs["tmp"]["alloc"] == ms.SIZES[5] + ms.SIZES[6] + 4 * GB + 99
@@ -301,7 +304,7 @@ def test_posters_from_plex_cached_and_radarr_fallback(client):
 def test_library_views(client):
     r = client.get("/api/library/movie", params={"sort": "score"}).json()
     s = r["summary"]
-    assert s["count"] == 8 and s["never"]["count"] >= 3 and s["freed"] > 0
+    assert s["count"] == 10 and s["never"]["count"] >= 3 and s["freed"] > 0
     assert any(a["kind"] == "delete_title" for a in s["actions"])
     assert r["items"][0]["best"]["score"] >= r["items"][-1]["best"]["score"] if r["items"][-1]["best"] else True
     big = next(i for i in r["items"] if i["name"] == "Big Movie")
@@ -360,6 +363,21 @@ def test_downloads_overview(client):
     old = by["Old.Download"]
     assert old["status"] == "ikke_importert" and old["advice"] == "vurder" and old["is_dir"]
     assert r["summary"]["count"] == 3
+
+
+def test_plex_check(client):
+    r = client.get("/api/plex-check").json()
+    assert r["available"]
+    names = {g["name"]: g for g in r["items"]}
+    assert "Orphan" in names and "Disc" in names
+    assert "ISO" in names["Disc"]["reason"]
+    assert "Kids Movie" not in names and "Big Movie" not in names
+    assert not any("tmp" in g["folder"] for g in r["items"])            # nedlastingsmappen tas ikke med
+    m = client.get("/api/plex-check", params={"view": "missing"}).json()
+    assert [g["name"] for g in m["items"]] == ["Gone"] and m["items"][0]["files"][0]["path"] == "/mnt/pool1/FILM/Gone (1999)/Gone.1999.mkv"
+    res = client.post("/api/plex-check/rescan", json={"folder": "/mnt/pool1/FILM/Orphan (2001)"}).json()
+    assert res["ok"] and ms.PLEX_REFRESH[-1] == ("1", "/FILM/Orphan (2001)")
+    assert client.post("/api/plex-check/rescan", json={"folder": "/mnt/pool1/tmp/x"}).status_code == 400
 
 
 # ------------------------------------------------------------------ sletting (kjøres sist)
